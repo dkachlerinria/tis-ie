@@ -4,8 +4,8 @@
 # General Config
 export BENCHMARK="bbh"
 export TRAINING_MODEL="Qwen/Qwen2.5-1.5B"
-export NUM_SAMPLES=100
-export END_INDEX=200
+export NUM_SAMPLES=1000
+export END_INDEX=20000
 export SEED=42
 
 # Selection Config
@@ -15,7 +15,7 @@ export SELECTION_METHOD="doubly_greedy" # Default for embedding/less
 
 # LESS Specific Config
 export CKPT_DIR="$(pwd)/files/checkpoints/qwen2.5-0.5b_warmup"
-export CKPT_STEPS="500 1000 1500 2000" # Example steps
+export CKPT_STEPS="78 156 234 312" # Steps for 10K dataset, 4 epochs, grad_acc 128
 export PROJ_DIM=8192
 
 # Paths
