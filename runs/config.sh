@@ -29,3 +29,9 @@ export BATCH_SIZE=1
 export GRAD_ACC=128
 export EPOCHS=2
 export LR=2e-5
+
+# LoRA Config
+export USE_LORA=True
+export LORA_RANK=16
+export LORA_ALPHA=32
+export LORA_DROPOUT=0.05

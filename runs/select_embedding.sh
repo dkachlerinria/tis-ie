@@ -46,6 +46,10 @@ python3 -m training.train_sft \
     --num_train_epochs ${EPOCHS} \
     --learning_rate ${LR} \
     --seed ${SEED} \
+    --use_lora ${USE_LORA} \
+    --lora_rank ${LORA_RANK} \
+    --lora_alpha ${LORA_ALPHA} \
+    --lora_dropout ${LORA_DROPOUT} \
     --save_strategy no \
     --report_to "none"
 
