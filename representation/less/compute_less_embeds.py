@@ -159,7 +159,7 @@ def collect_grads(
     """
     model_id = 0  # model_id is used to draft the random seed for the projectors
     block_size = 128  # fixed block size for the projectors
-    projector_batch_size = 16  # batch size for the projectors
+    projector_batch_size = 4  # batch size for the projectors
     torch.random.manual_seed(0)  # set the random seed for torch
 
     device = next(model.parameters()).device
