@@ -37,7 +37,7 @@ echo "Step 2: Performing data selection..."
 python3 -m selection.sim_subset \
     --selection_method "round_robin" \
     --subset_dataset_dir "${DATASET_DIR}" \
-    --similarity_matrix_path "${INDEX_DIR}/${BENCHMARK}_cossim.npy" \
+    --similarity_matrix_path "${INDEX_DIR}/${BENCHMARK}_cossim_0_${END_INDEX}.npy" \
     --train_dataset_name "Harvard-DCML/tulu-v2-197K-processed" \
     --dev_dataset_name "${BENCHMARK}" \
     --sizes ${NUM_SAMPLES}
