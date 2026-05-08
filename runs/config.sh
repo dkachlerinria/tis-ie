@@ -16,7 +16,7 @@ export SELECTION_METHOD="doubly_greedy" # Default for embedding/less
 # LESS Specific Config
 export CKPT_DIR="$(pwd)/files/checkpoints/qwen2.5-0.5b_warmup"
 export CKPT_STEPS="10 20 30 40 50" # Steps for 500 samples, 1 epoch, grad_acc 10
-export PROJ_DIM=2048
+export PROJ_DIM=512
 
 # Paths
 export INDEX_DIR="$(pwd)/files/index/ettin_subset_${END_INDEX}"
