@@ -144,7 +144,7 @@ def collect_grads(
     proj_dim: int = 8192,
     adam_optimizer_state: Optional[dict] = None,
     gradient_type: str = "adam",
-    project_interval: int = 8,
+    project_interval: int = 1,
 ):
     """
     Collects gradients from the model during evaluation and saves them to disk.
@@ -173,6 +173,7 @@ def collect_grads(
 
     projector = get_trak_projector(device)
     number_of_params = get_number_of_trainable_params(model)
+    print(f"DEBUG: Projecting {number_of_params} parameters per sample")
 
     # initialize a project for each target projector dimension
     proj = projector(
