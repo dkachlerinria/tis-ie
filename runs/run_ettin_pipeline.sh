@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Configuration
 BENCHMARK="bbh"
@@ -8,10 +9,10 @@ NUM_SAMPLES=5000
 END_INDEX=20000
 
 # Paths
-INDEX_DIR="files/index/ettin_subset_${END_INDEX}"
-DATASET_DIR="files/datasets/ettin_rr_${BENCHMARK}_subset_${END_INDEX}"
-MODEL_DIR="files/models/qwen2.5-0.5b_ettin_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
-RESULTS_DIR="files/results/ettin_rr_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+INDEX_DIR="$(pwd)/files/index/ettin_subset_${END_INDEX}"
+DATASET_DIR="$(pwd)/files/datasets/ettin_rr_${BENCHMARK}_subset_${END_INDEX}"
+MODEL_DIR="$(pwd)/files/models/qwen2.5-0.5b_ettin_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+RESULTS_DIR="$(pwd)/files/results/ettin_rr_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
 
 # Step 0: Ensure data is downloaded
 if [ ! -d "data/eval/${BENCHMARK}" ]; then
