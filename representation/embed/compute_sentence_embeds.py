@@ -57,14 +57,14 @@ def load_train_dataset(
                     message_text += (
                         "<|assistant|>\n"
                         + message["content"].strip()
-                        + tokenizer.eos_token
+                        + (tokenizer.eos_token if tokenizer.eos_token is not None else "")
                         + "\n"
                     )
                 else:
                     raise ValueError("Invalid role: {}".format(message["role"]))
             # add bos token if needed
             if add_bos_token:
-                message_text = tokenizer.bos_token + message_text
+                message_text = (tokenizer.bos_token if tokenizer.bos_token is not None else "") + message_text
             return message_text
 
         add_bos_token = tokenizer.bos_token is not None
