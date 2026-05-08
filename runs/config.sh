@@ -4,8 +4,8 @@
 # General Config
 export BENCHMARK="bbh"
 export TRAINING_MODEL="Qwen/Qwen2.5-1.5B"
-export NUM_SAMPLES=1000
-export END_INDEX=20000
+export NUM_SAMPLES=100
+export END_INDEX=200
 export SEED=42
 
 # Selection Config
@@ -31,7 +31,7 @@ export EPOCHS=2
 export LR=2e-5
 
 # LoRA Config
-export USE_LORA=False
+export USE_LORA=True
 export LORA_RANK=16
 export LORA_ALPHA=32
 export LORA_DROPOUT=0.05
