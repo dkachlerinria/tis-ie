@@ -1,2 +1,3 @@
 pip install POT
 
+export CUDA_VISIBLE_DEVICES=0

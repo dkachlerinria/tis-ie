@@ -4,8 +4,8 @@
 # General Config
 export BENCHMARK="bbh"
 export TRAINING_MODEL="Qwen/Qwen2.5-1.5B"
-export NUM_SAMPLES=100
-export END_INDEX=200
+export NUM_SAMPLES=1000
+export END_INDEX=20000
 export SEED=42
 
 # Selection Config
