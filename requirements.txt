@@ -10,3 +10,4 @@ vllm==0.11.0
 traker==0.3.2
 seaborn
 POT
+tqdm

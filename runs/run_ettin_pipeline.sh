@@ -35,7 +35,7 @@ python3 -m representation.embed.compute_sentence_embeds \
 # Step 2: Perform Data Selection (Round Robin)
 echo "Step 2: Performing data selection..."
 python3 -m selection.sim_subset \
-    --selection_method "round_robin" \
+    --selection_method "double_greedy" \
     --subset_dataset_dir "${DATASET_DIR}" \
     --similarity_matrix_path "${INDEX_DIR}/${BENCHMARK}_cossim_0_${END_INDEX}.npy" \
     --train_dataset_name "Harvard-DCML/tulu-v2-197K-processed" \

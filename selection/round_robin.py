@@ -1,6 +1,7 @@
 from itertools import cycle
 
 import numpy as np
+from tqdm import tqdm
 
 
 def round_robin_selection(sim_matrix: np.ndarray, num_samples: int) -> list[int]:
