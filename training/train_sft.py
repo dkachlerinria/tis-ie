@@ -178,7 +178,14 @@ def train():
     if trainer.is_fsdp_enabled:
         trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
     trainer.train()
-    trainer.save_model(hf_args.output_dir)
+    if train_cfg.use_lora:
+        logger.info("Merging LoRA weights into the base model...")
+        model = model.merge_and_unload()
+        model.save_pretrained(hf_args.output_dir)
+        tokenizer.save_pretrained(hf_args.output_dir)
+    else:
+        trainer.save_model(hf_args.output_dir)
+    
     trainer.accelerator.wait_for_everyone()
     trainer.save_state()
 
