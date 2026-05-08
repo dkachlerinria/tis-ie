@@ -260,8 +260,9 @@ def load_model(
         # load this way to make sure that optimizer states match the model structure
         config = LoraConfig.from_pretrained(model_name_or_path)
         base_model = AutoModelForCausalLM.from_pretrained(
-            config.base_model_name_or_path, torch_dtype=torch_dtype, device_map="auto"
+            config.base_model_name_or_path, torch_dtype=torch_dtype
         )
+        base_model.to("cuda")
 
         embedding_size = base_model.get_input_embeddings().weight.shape[0]
         if len(tokenizer) != embedding_size:
@@ -269,12 +270,13 @@ def load_model(
             base_model.resize_token_embeddings(len(tokenizer))
 
         model = PeftModel.from_pretrained(
-            base_model, model_name_or_path, device_map="auto"
+            base_model, model_name_or_path
         )
     else:
         model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path, torch_dtype=torch_dtype, device_map="auto"
+            model_name_or_path, torch_dtype=torch_dtype
         )
+        model.to("cuda")
 
         # resize embeddings if needed (e.g. for LlamaTokenizer)
         embedding_size = model.get_input_embeddings().weight.shape[0]
