@@ -221,7 +221,7 @@ def main():
     logger.setLevel(logging.INFO)
 
     logger.info("Loading model %s with dtype %s", args.model_name, args.dtype)
-    kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
+    kwargs = {"torch_dtype": torch.bfloat16}
     model = SentenceTransformer(args.model_name, model_kwargs=kwargs)
 
     logger.info(
