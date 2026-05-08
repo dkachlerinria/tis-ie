@@ -6,8 +6,8 @@ source runs/config.sh
 
 METHOD="less"
 DATASET_DIR="${DATASET_ROOT}/${METHOD}_${BENCHMARK}_subset_${END_INDEX}"
-MODEL_DIR="${MODEL_ROOT}/qwen2.5-0.5b_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
-RESULTS_DIR="${RESULTS_ROOT}/qwen2.5-0.5b_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+MODEL_DIR="${MODEL_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
 LESS_DIR="$(pwd)/files/less"
 
 echo "Starting LESS Selection Pipeline..."

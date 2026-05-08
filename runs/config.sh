@@ -15,7 +15,7 @@ export SELECTION_METHOD="doubly_greedy" # Default for embedding/less
 
 # LESS Specific Config
 export CKPT_DIR="$(pwd)/files/checkpoints/qwen2.5-0.5b_warmup"
-export CKPT_STEPS="78 156 234 312" # Steps for 10K dataset, 4 epochs, grad_acc 128
+export CKPT_STEPS="10 20 30 40 50" # Steps for 500 samples, 1 epoch, grad_acc 10
 export PROJ_DIM=8192
 
 # Paths
@@ -31,7 +31,7 @@ export EPOCHS=2
 export LR=2e-5
 
 # LoRA Config
-export USE_LORA=True
+export USE_LORA=False
 export LORA_RANK=16
 export LORA_ALPHA=32
 export LORA_DROPOUT=0.05

@@ -16,16 +16,18 @@ echo "Output Directory: ${CKPT_DIR}"
 python3 -m training.train_sft \
     --model_name "${WARMUP_MODEL}" \
     --train_dataset_name "${WARMUP_DATASET}" \
+    --num_samples 500 \
     --output_dir "${CKPT_DIR}" \
     --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 128 \
-    --num_train_epochs 4 \
+    --gradient_accumulation_steps 10 \
+    --num_train_epochs 1 \
     --learning_rate 2e-5 \
     --seed ${SEED} \
     --warmup_ratio 0.03 \
     --lr_scheduler_type linear \
     --weight_decay 0.0 \
-    --save_strategy epoch \
+    --save_strategy steps \
+    --save_steps 10 \
     --logging_steps 1 \
     --use_lora True \
     --lora_r 128 \
