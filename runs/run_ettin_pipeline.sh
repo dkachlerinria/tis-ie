@@ -29,7 +29,7 @@ python3 -m representation.embed.compute_sentence_embeds \
     --dev_dataset_name "${BENCHMARK}" \
     --dev_index_path "${INDEX_DIR}/${BENCHMARK}_dev_embeds.pt" \
     --save_dir "${INDEX_DIR}" \
-    --batch_size 32 \
+    --batch_size 256 \
     --end_index "${END_INDEX}"
 
 # Step 2: Perform Data Selection (Round Robin)
