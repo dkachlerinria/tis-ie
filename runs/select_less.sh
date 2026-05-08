@@ -12,8 +12,23 @@ LESS_DIR="$(pwd)/files/less"
 
 echo "Starting LESS Selection Pipeline..."
 
-# Step 1: Compute LESS Influence/Similarity Matrix
-echo "Step 1: Computing LESS similarity matrix..."
+# Step 1: Extract Gradients for all checkpoints
+echo "Step 1: Extracting gradients for all checkpoints..."
+for step in ${CKPT_STEPS}; do
+    echo "Processing checkpoint-${step}..."
+    python3 -m representation.less.compute_less_embeds \
+        --ckpt_path "${CKPT_DIR}/checkpoint-${step}" \
+        --ckpt_step "${step}" \
+        --dev_dataset_name "${BENCHMARK}" \
+        --save_dir "${LESS_DIR}" \
+        --compute_train_grads \
+        --compute_dev_grads \
+        --end_index "${END_INDEX}" \
+        --proj_dim "${PROJ_DIM}"
+done
+
+# Step 2: Compute LESS Influence/Similarity Matrix
+echo "Step 2: Computing LESS similarity matrix..."
 python3 -m representation.less.compute_less_similarity \
     --train_dataset_name "${TRAIN_DATASET}" \
     --dev_dataset_name "${BENCHMARK}" \
@@ -21,7 +36,7 @@ python3 -m representation.less.compute_less_similarity \
     --ckpt_dir "${CKPT_DIR}" \
     --checkpoint_steps ${CKPT_STEPS} \
     --proj_dim ${PROJ_DIM} \
-    --num_epochs 4
+    --num_epochs 1
 
 # Step 2: Perform Data Selection
 # LESS saves to {output_dir}/{dev_dataset_name}_cossim.npy
