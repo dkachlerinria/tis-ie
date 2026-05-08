@@ -5,12 +5,13 @@ BENCHMARK="bbh"
 ENCODER_MODEL="jhu-clsp/ettin-encoder-150m"
 TRAINING_MODEL="Qwen/Qwen2.5-0.5B"
 NUM_SAMPLES=5000
+END_INDEX=20000
 
 # Paths
-INDEX_DIR="files/index/ettin"
-DATASET_DIR="files/datasets/ettin_rr_${BENCHMARK}"
-MODEL_DIR="files/models/qwen2.5-0.5b_ettin_${BENCHMARK}_top${NUM_SAMPLES}"
-RESULTS_DIR="files/results/ettin_rr_${BENCHMARK}_top${NUM_SAMPLES}"
+INDEX_DIR="files/index/ettin_subset_${END_INDEX}"
+DATASET_DIR="files/datasets/ettin_rr_${BENCHMARK}_subset_${END_INDEX}"
+MODEL_DIR="files/models/qwen2.5-0.5b_ettin_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+RESULTS_DIR="files/results/ettin_rr_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
 
 # Step 0: Ensure data is downloaded
 if [ ! -d "data/eval/${BENCHMARK}" ]; then
@@ -27,7 +28,8 @@ python3 -m representation.embed.compute_sentence_embeds \
     --dev_dataset_name "${BENCHMARK}" \
     --dev_index_path "${INDEX_DIR}/${BENCHMARK}_dev_embeds.pt" \
     --save_dir "${INDEX_DIR}" \
-    --batch_size 128
+    --batch_size 128 \
+    --end_index "${END_INDEX}"
 
 # Step 2: Perform Data Selection (Round Robin)
 echo "Step 2: Performing data selection..."
