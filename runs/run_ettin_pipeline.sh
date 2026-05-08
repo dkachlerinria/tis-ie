@@ -5,7 +5,7 @@ set -e
 BENCHMARK="bbh"
 ENCODER_MODEL="jhu-clsp/ettin-encoder-150m"
 TRAINING_MODEL="Qwen/Qwen2.5-0.5B"
-NUM_SAMPLES=5000
+NUM_SAMPLES=1000
 END_INDEX=20000
 
 # Paths
