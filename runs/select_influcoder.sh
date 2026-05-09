@@ -51,8 +51,7 @@ mkdir -p "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
 # Step 1a: Stock train_anchors (from BENCHMARK dataset, e.g., BBH)
 echo "Step 1a: Stocking train_anchors from ${BENCHMARK}..."
 python influcoder/gradient_stocking.py \
-    --dataset tulu \
-    --train_dataset_name "${BENCHMARK}" \
+    --dataset bbh \
     --split train_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
@@ -67,8 +66,7 @@ python influcoder/gradient_stocking.py \
 START_EVAL_A=${N_TRAIN_ANCHORS}
 echo "Step 1b: Stocking eval_anchors from ${BENCHMARK}..."
 python influcoder/gradient_stocking.py \
-    --dataset tulu \
-    --train_dataset_name "${BENCHMARK}" \
+    --dataset bbh \
     --split eval_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
