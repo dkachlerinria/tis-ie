@@ -63,7 +63,7 @@ python influcoder/gradient_stocking.py \
     --start_index 0 \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
-    ${INFLUCODER_WARMUP_ARGS} \
+    --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
 # Step 1b: Stock eval_anchors
@@ -78,7 +78,7 @@ python influcoder/gradient_stocking.py \
     --start_index "${N_TRAIN_ANCHORS}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
-    ${INFLUCODER_WARMUP_ARGS} \
+    --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
@@ -93,7 +93,7 @@ python influcoder/gradient_stocking.py \
     --start_index 0 \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
-    ${INFLUCODER_WARMUP_ARGS} \
+    --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
 # Step 1d: Stock eval_pool
@@ -108,7 +108,7 @@ python influcoder/gradient_stocking.py \
     --start_index "${N_TRAIN_POOL}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
-    ${INFLUCODER_WARMUP_ARGS} \
+    --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
 
 # Step 2: Train the influence encoder
