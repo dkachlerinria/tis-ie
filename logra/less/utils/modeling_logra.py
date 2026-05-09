@@ -9,6 +9,7 @@ from typing import List, Union, Dict, Any
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel
 from transformers import PretrainedConfig
+from peft import PeftConfig, PeftModel
 
 
 if torch.cuda.is_available():
@@ -234,39 +235,30 @@ class LoGra:
         self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        # Load base LLM with vocab size mismatch tolerance
+        # Load base LLM - handle LoRA adapters
         import os
-        import json
-        from transformers import AutoConfig
 
-        try:
+        # Check if this is a LoRA adapter checkpoint
+        if os.path.exists(os.path.join(model_name, "adapter_config.json")):
+            # Load LoRA adapter
+            peft_config = PeftConfig.from_pretrained(model_name)
+            base_model_name = peft_config.base_model_name_or_path
+
+            # Load base model
+            lm_model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
+                torch_dtype=torch_dtype,
+            )
+
+            # Load and merge LoRA adapter
+            lm_model = PeftModel.from_pretrained(lm_model, model_name)
+            lm_model = lm_model.merge_and_unload()
+        else:
+            # Regular model checkpoint
             lm_model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 torch_dtype=torch_dtype,
             )
-        except RuntimeError as e:
-            if "size mismatch" in str(e) and "embed_tokens" in str(e):
-                # Vocab size mismatch: get base model name from checkpoint config and load that
-                config_path = os.path.join(model_name, "config.json")
-                with open(config_path) as f:
-                    config_dict = json.load(f)
-                base_model = config_dict.get("_name_or_path", model_name)
-
-                # Load base model (has correct vocab for its tokenizer)
-                lm_model = AutoModelForCausalLM.from_pretrained(
-                    base_model,
-                    torch_dtype=torch_dtype,
-                )
-
-                # Load checkpoint weights with strict=False to handle vocab mismatch
-                ckpt_files = [f for f in os.listdir(model_name) if f.startswith("pytorch_model") and f.endswith(".bin")]
-                if ckpt_files:
-                    state_dict = torch.load(os.path.join(model_name, ckpt_files[0]), map_location="cpu")
-                    lm_model.load_state_dict(state_dict, strict=False)
-                else:
-                    raise RuntimeError(f"No pytorch_model.bin found in {model_name}")
-            else:
-                raise
 
         # Wrap with LoGra
         self.model = LoGraModel(lm_model, rank=rank, only_lora=only_lora, mlp_only=mlp_only)
