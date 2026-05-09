@@ -115,12 +115,16 @@ def obtain_gradients_with_adam(model, batch, avg, avg_sq):
     vectorized_grads = torch.cat(
         [p.grad.view(-1) for n, p in model.named_parameters() if p.grad is not None]
     )
+    # Free .grad tensors now; they've been copied into vectorized_grads.
+    model.zero_grad()
 
     updated_avg = beta1 * avg + (1 - beta1) * vectorized_grads
     updated_avg_sq = beta2 * avg_sq + (1 - beta2) * vectorized_grads**2
-    vectorized_grads = updated_avg / torch.sqrt(updated_avg_sq + eps)
+    del vectorized_grads
+    result = updated_avg / torch.sqrt(updated_avg_sq + eps)
+    del updated_avg, updated_avg_sq
 
-    return vectorized_grads
+    return result
 
 
 def prepare_optimizer_state(model, optimizer_state, device):
@@ -210,12 +214,14 @@ def collect_grads(
 
         # add the gradients to the full_grads
         full_grads.append(vectorized_grads)
+        del vectorized_grads  # drop outer reference; full_grads is the only holder now
         model.zero_grad()
 
         # project
         if count % project_interval == 0:
             projected_grads.append(_project(full_grads))
             full_grads = []
+            torch.cuda.empty_cache()
 
     if len(full_grads) > 0:
         projected_grads.append(_project(full_grads))
@@ -337,7 +343,6 @@ if __name__ == "__main__":
     # load model
     print(f"Loading model from checkpoint: {args.ckpt_path} at step {args.ckpt_step}")
     print("Note: this is a LoRA checkpoint.")
-    args.ckpt_path = os.path.abspath(args.ckpt_path)
     tokenizer = AutoTokenizer.from_pretrained(args.ckpt_path, use_fast=True)
     model = load_model(args.ckpt_path, tokenizer)
 
