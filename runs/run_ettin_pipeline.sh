@@ -1,18 +1,13 @@
 #!/bin/bash
 set -e
 
-# Configuration
-BENCHMARK="bbh"
-ENCODER_MODEL="jhu-clsp/ettin-encoder-150m"
-TRAINING_MODEL="Qwen/Qwen2.5-0.5B"
-NUM_SAMPLES=1000
-END_INDEX=20000
+# Load configuration
+source runs/config.sh
 
-# Paths
-INDEX_DIR="$(pwd)/files/index/ettin_subset_${END_INDEX}"
-DATASET_DIR="$(pwd)/files/datasets/ettin_rr_${BENCHMARK}_subset_${END_INDEX}"
-MODEL_DIR="$(pwd)/files/models/qwen2.5-0.5b_ettin_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
-RESULTS_DIR="$(pwd)/files/results/ettin_rr_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+METHOD="ettin"
+DATASET_DIR="${DATASET_ROOT}/${METHOD}_${BENCHMARK}_subset_${END_INDEX}"
+MODEL_DIR="${MODEL_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
+RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
 
 # Step 0: Ensure data is downloaded
 if [ ! -d "data/eval/${BENCHMARK}" ]; then

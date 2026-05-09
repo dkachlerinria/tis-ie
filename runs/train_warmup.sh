@@ -6,7 +6,6 @@ source runs/config.sh
 
 # Warmup specific config
 WARMUP_DATASET="Harvard-DCML/tulu-v2-10K-warmup-processed"
-WARMUP_MODEL="Qwen/Qwen2.5-0.5B" # Usually a smaller model is used for warmup
 
 echo "Starting LESS Warmup Training..."
 echo "Model: ${WARMUP_MODEL}"

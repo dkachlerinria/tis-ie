@@ -4,6 +4,11 @@
 # General Config
 export BENCHMARK="bbh"
 export TRAINING_MODEL="Qwen/Qwen2.5-0.5B"
+export WARMUP_MODEL="${TRAINING_MODEL}"
+
+# Slug for file paths
+export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | tr '/' '_')
+
 export NUM_SAMPLES=100
 export END_INDEX=200
 export SEED=42
@@ -14,15 +19,15 @@ export TRAIN_DATASET="Harvard-DCML/tulu-v2-197K-processed"
 export SELECTION_METHOD="doubly_greedy" # Default for embedding/less
 
 # LESS Specific Config
-export CKPT_DIR="$(pwd)/files/checkpoints/qwen2.5-0.5b_warmup"
+export CKPT_DIR="$(pwd)/files/checkpoints/${MODEL_SLUG}_warmup"
 export CKPT_STEPS="50" # Steps for 500 samples, 1 epoch, grad_acc 10
 export PROJ_DIM=512
 
 # Paths
-export INDEX_DIR="$(pwd)/files/index/ettin_subset_${END_INDEX}"
-export DATASET_ROOT="$(pwd)/files/datasets"
-export MODEL_ROOT="$(pwd)/files/models"
-export RESULTS_ROOT="$(pwd)/files/results"
+export INDEX_DIR="$(pwd)/files/index/${MODEL_SLUG}_ettin_subset_${END_INDEX}"
+export DATASET_ROOT="$(pwd)/files/datasets/${MODEL_SLUG}"
+export MODEL_ROOT="$(pwd)/files/models/${MODEL_SLUG}"
+export RESULTS_ROOT="$(pwd)/files/results/${MODEL_SLUG}"
 
 # Training Hyperparameters
 export BATCH_SIZE=1
