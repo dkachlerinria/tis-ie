@@ -238,7 +238,7 @@ def load_raw_dataset(dataset_name, tokenizer, n_samples=None, split=None):
     return processed
 
 
-def load_bbh_data(data_dir, n_samples=None):
+def load_bbh_data(data_dir, n_samples=None, start_index=0):
     """Loads BBH data with CoT prompts, identical to evaluation/bbh/run_eval.py."""
     import glob
     bbh_dir = os.path.join(data_dir, "bbh")
@@ -280,11 +280,13 @@ def load_bbh_data(data_dir, n_samples=None):
                 "doc_id": f"bbh_{task_name}_{ex.get('id', len(processed))}"
             })
 
+    # Sort to ensure stable slicing before shuffle
+    processed = sorted(processed, key=lambda x: x["doc_id"])
+    
     if n_samples:
-        import random
-        random.seed(42)
-        random.shuffle(processed)
-        processed = processed[:n_samples]
+        end_index = start_index + n_samples
+        processed = processed[start_index:end_index]
+        print(f"   [BBH] Selected {len(processed)} samples from index {start_index} to {end_index}")
 
     return processed
 
@@ -314,7 +316,7 @@ def load_from_json(data_dir: str, split: str, n_samples: int = None) -> list:
     return samples
 
 
-def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = None, anchor_size: int = 10000, pool_size: int = 100000, train_dataset_name: str = None):
+def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = None, start_index: int = 0, train_dataset_name: str = None):
     print(f"\n📂 Formatting {dataset_name} dataset for split: {split}")
 
     if dataset_name == "flan":
@@ -376,21 +378,14 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
         n_eval_a = max(1, anchor_size // 5)
         n_eval_p = max(1, pool_size // 5)
 
-        if split == "train_anchors":
-            target_indices = index[:anchor_size]
-        elif split == "pool":
-            target_indices = index[anchor_size : anchor_size + pool_size]
-        elif split == "warmup":
-            target_indices = index[anchor_size + pool_size : n - n_eval_a - n_eval_p]
-        elif split == "eval_anchors":
-            target_indices = index[n - n_eval_a - n_eval_p : n - n_eval_p]
-        elif split == "eval_pool":
-            target_indices = index[n - n_eval_p :]
-        else:
-            raise ValueError(f"Unknown split '{split}'")
-
         if n_samples is not None:
-            target_indices = target_indices[:n_samples]
+            # Explicit slicing
+            target_indices = index[start_index : start_index + n_samples]
+            print(f"   [Tulu] Selected {len(target_indices)} indices from index {start_index} to {start_index + n_samples}")
+        else:
+            # Fallback to all remaining data if no n_samples provided
+            target_indices = index[start_index:]
+            print(f"   [Tulu] Selected all {len(target_indices)} remaining samples from index {start_index}")
 
         print(f"   [Tulu] Selecting {len(target_indices)} indices for '{split}'...")
         processed = []
@@ -425,37 +420,20 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
         return processed
     elif dataset_name == "bbh":
         # BBH data is usually in data/eval/bbh
-        eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval/bbh")
-        processed = load_bbh_data(eval_data_dir, n_samples=n_samples)
+        eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval")
+        processed = load_bbh_data(eval_data_dir, n_samples=n_samples, start_index=start_index)
         print(f"   ✓ Loaded {len(processed):,} BBH samples")
         return processed
     else:
         # For Dolci, Platinum, and MMLU - PASS n_samples to avoid loading everything
         raw_samples = load_raw_dataset(dataset_name, tokenizer, n_samples=n_samples, split=split)
         
-        np.random.seed(42)
-        index = list(range(len(raw_samples)))
-        np.random.shuffle(index)
-        
-        if split == "train_anchors":
-            target_indices = index[:anchor_size]
-        elif split == "pool":
-            target_indices = index[anchor_size : anchor_size + pool_size]
-        elif split == "warmup":
-            start = anchor_size + pool_size
-            target_indices = index[start : start + 100000]
-        elif split == "eval_anchors":
-            start = anchor_size + pool_size + 100000
-            target_indices = index[start:]
-        else:
-            raise ValueError(f"Unknown split: {split}")
-        
-        # Fallback for small datasets
-        if not target_indices and len(index) > 0:
-            target_indices = index[:min(len(index), n_samples or 1000)]
-            
         if n_samples is not None:
-            target_indices = target_indices[:n_samples]
+            target_indices = index[start_index : start_index + n_samples]
+            print(f"   [{dataset_name}] Selected {len(target_indices)} indices from index {start_index} to {start_index + n_samples}")
+        else:
+            target_indices = index[start_index:]
+            print(f"   [{dataset_name}] Selected all {len(target_indices)} remaining samples from index {start_index}")
             
         if len(target_indices) < (n_samples or 0) and split != "warmup":
             print(f"   ⚠️ Warning: Only found {len(target_indices)} samples for split '{split}' (requested {n_samples})")
@@ -813,17 +791,10 @@ def main():
         help="Number of samples to stock. If not specified, stocks all available samples for the split."
     )
     parser.add_argument(
-        "--n_warmup", type=int, default=100000,
-        help="Number of samples to use for LoRA SFT warmup (default: 100000)"
+        "--start_index", type=int, default=0,
+        help="Start index for data selection (for non-overlapping partitions)."
     )
-    parser.add_argument(
-        "--anchor_size", type=int, default=10000,
-        help="The pool size reserved for train_anchors in the shuffle split (default: 10000)"
-    )
-    parser.add_argument(
-        "--pool_size", type=int, default=100000,
-        help="The pool size reserved for the candidate pool in the shuffle split (default: 100000)"
-    )
+    # anchor_size and pool_size are no longer used for explicit slicing
     parser.add_argument(
         "--model_name", type=str, default=DEFAULT_MODEL,
         help=f"Model to use for gradient extraction (default: {DEFAULT_MODEL})"
@@ -923,7 +894,7 @@ def main():
             warmup_samples = load_data_split(
                 args.dataset, "warmup", tokenizer_tmp,
                 n_samples=actual_n_warmup,
-                anchor_size=args.anchor_size, pool_size=args.pool_size,
+                start_index=0, # Warmup starts at 0 unless specified otherwise
                 train_dataset_name=args.train_dataset_name
             )
         else:
@@ -931,7 +902,7 @@ def main():
         target_samples = load_data_split(
             args.dataset, args.split, tokenizer_tmp,
             n_samples=args.n_samples,
-            anchor_size=args.anchor_size, pool_size=args.pool_size,
+            start_index=args.start_index,
             train_dataset_name=args.train_dataset_name
         )
 

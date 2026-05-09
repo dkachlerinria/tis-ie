@@ -12,8 +12,12 @@ RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPL
 # --- Influcoder-specific config ---
 INFLUCODER_RUN_MODE="small"
 INFLUCODER_PROJ_DIM=131072
-N_ANCHOR_SAMPLES=50
-N_POOL_SAMPLES=100
+
+# Data Partitioning (4-way split to prevent leakage)
+N_TRAIN_POOL=4000
+N_EVAL_POOL=200
+N_TRAIN_ANCHORS=1000
+N_EVAL_ANCHORS=100
 INFLUCODER_DB_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_gradients"
 TRAINED_ENCODER_DIR="$(pwd)/files/models/${MODEL_SLUG}_influence_encoder"
 INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_embeds_${END_INDEX}"
@@ -55,9 +59,8 @@ python influcoder/gradient_stocking.py \
     --split train_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
-    --n_samples "${N_ANCHOR_SAMPLES}" \
-    --anchor_size "${N_ANCHOR_SAMPLES}" \
-    --pool_size "${N_POOL_SAMPLES}" \
+    --n_samples "${N_TRAIN_ANCHORS}" \
+    --start_index 0 \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
     ${INFLUCODER_WARMUP_ARGS} \
@@ -71,9 +74,8 @@ python influcoder/gradient_stocking.py \
     --split eval_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
-    --n_samples "${N_ANCHOR_SAMPLES}" \
-    --anchor_size "${N_ANCHOR_SAMPLES}" \
-    --pool_size "${N_POOL_SAMPLES}" \
+    --n_samples "${N_EVAL_ANCHORS}" \
+    --start_index "${N_TRAIN_ANCHORS}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
     ${INFLUCODER_WARMUP_ARGS} \
@@ -87,9 +89,8 @@ python influcoder/gradient_stocking.py \
     --split pool \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
-    --n_samples "${N_POOL_SAMPLES}" \
-    --anchor_size "${N_ANCHOR_SAMPLES}" \
-    --pool_size "${N_POOL_SAMPLES}" \
+    --n_samples "${N_TRAIN_POOL}" \
+    --start_index 0 \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
     ${INFLUCODER_WARMUP_ARGS} \
@@ -103,9 +104,8 @@ python influcoder/gradient_stocking.py \
     --split eval_pool \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
-    --n_samples "${N_POOL_SAMPLES}" \
-    --anchor_size "${N_ANCHOR_SAMPLES}" \
-    --pool_size "${N_POOL_SAMPLES}" \
+    --n_samples "${N_EVAL_POOL}" \
+    --start_index "${N_TRAIN_POOL}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
     ${INFLUCODER_WARMUP_ARGS} \
