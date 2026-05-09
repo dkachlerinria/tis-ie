@@ -18,6 +18,13 @@ INFLUCODER_DB_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_gradients"
 TRAINED_ENCODER_DIR="$(pwd)/files/models/${MODEL_SLUG}_influence_encoder"
 INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_embeds_${END_INDEX}"
 
+# --- Execution Toggles ---
+FORCE_RECOMPUTE=false  # Set to true to delete existing DBs and re-extract gradients
+RECOMPUTE_FLAG=""
+if [ "$FORCE_RECOMPUTE" = true ]; then
+    RECOMPUTE_FLAG="--force_recompute"
+fi
+
 # Use the same warmup checkpoint as select_less
 LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
 
@@ -39,7 +46,7 @@ python influcoder/gradient_stocking.py \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    --force_recompute \
+    ${RECOMPUTE_FLAG} \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
 # Step 1b: Stock eval_anchors
@@ -54,7 +61,7 @@ python influcoder/gradient_stocking.py \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    --force_recompute \
+    ${RECOMPUTE_FLAG} \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
@@ -69,10 +76,8 @@ python influcoder/gradient_stocking.py \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    --force_recompute \
+    ${RECOMPUTE_FLAG} \
     --output_name "${INFLUCODER_DB_DIR}/pool"
-
-# Hello
 
 # Step 1d: Stock eval_pool
 echo "Step 1d: Stocking eval_pool gradients (using tulu)..."
@@ -86,7 +91,7 @@ python influcoder/gradient_stocking.py \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    --force_recompute \
+    ${RECOMPUTE_FLAG} \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
 
 # Step 2: Train the influence encoder

@@ -175,6 +175,13 @@ def aggregate_scores(score_matrix, mode='mean'):
     raise ValueError(f"Unknown mode: {mode}")
 
 def safe_normalize(tensor, dim=1, eps=1e-8):
+    if tensor.ndim == 1:
+        # Handle 1D tensor (single sample or empty) by adding a batch dimension
+        tensor = tensor.unsqueeze(0)
+    
+    if tensor.size(0) == 0:
+        return tensor
+
     tensor_d = tensor.to(torch.float64)
     norms = torch.norm(tensor_d, p=2, dim=dim, keepdim=True)
     norms = torch.clamp(norms, min=eps)
@@ -422,7 +429,9 @@ if __name__ == "__main__":
     eval_pool, grads_eval_pool = load_stocked_samples_by_ids(args.pool_eval_db, eval_pool_ids, args.gradient_seed)
 
     check_gradient_diagnostics("Train Anchors", grads_train_anchors)
-    check_gradient_diagnostics("Eval Anchors", grads_eval_anchors)
+    check_gradient_diagnostics("Eval Anchors",  grads_eval_anchors)
+    check_gradient_diagnostics("Train Pool",    grads_train_pool)
+    check_gradient_diagnostics("Eval Pool",     grads_eval_pool)
 
     train_anchors_text = samples_to_texts(train_anchors, gradient_tokenizer)
     eval_anchors_text  = samples_to_texts(eval_anchors,  gradient_tokenizer)
