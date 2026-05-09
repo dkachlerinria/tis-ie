@@ -69,17 +69,39 @@ def _flat_ids(x):
 
 def format_sample(item, dataset_name, tokenizer, max_seq_len=1024):
     prompt, response = item["prompt"], item["response"]
-    messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
-    full_ids = _flat_ids(tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False))
-    prompt_ids = _flat_ids(tokenizer.apply_chat_template(messages[:-1], tokenize=True, add_generation_prompt=True))
+    
+    # 100% PARITY with Tulu Chat Format (common/data.py & evaluation/templates.py)
+    def _tulu_format(p, r):
+        # We handle BBH-specific A: suffix here to match run_eval.py:134
+        if dataset_name == "bbh":
+             # run_eval.py:131-134
+             user_content = p.strip()
+             assistant_content = " A: " + r.strip()
+        else:
+             user_content = p.strip()
+             assistant_content = r.strip()
+
+        # Build string according to _concat_messages in common/data.py
+        formatted_prompt = f"<|user|>\n{user_content}\n<|assistant|>\n"
+        full_text = formatted_prompt + assistant_content + tokenizer.eos_token + "\n"
+        return formatted_prompt, full_text
+
+    formatted_prompt, full_text = _tulu_format(prompt, response)
+    
+    # Tokenize independently to find the split point (for label masking)
+    # Match encode_with_messages_format logic
+    full_ids = tokenizer(full_text, add_special_tokens=False).input_ids
+    prompt_ids = tokenizer(formatted_prompt, add_special_tokens=False).input_ids
+    
     input_ids = full_ids[:max_seq_len]
     p_len = min(len(prompt_ids), len(input_ids))
+    
     return {
         "input_ids": input_ids,
         "labels": [-100] * p_len + input_ids[p_len:],
         "attention_mask": [1] * len(input_ids),
-        "full_text": tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False),
-        "prompt_text": tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True),
+        "full_text": full_text,
+        "prompt_text": formatted_prompt,
     }
 
 def render_for_storage(item, dataset_name, tokenizer, max_seq_len=1024):
@@ -225,6 +247,57 @@ def load_raw_dataset(dataset_name, tokenizer, n_samples=None, split=None):
     return processed
 
 
+def load_bbh_data(data_dir, n_samples=None):
+    """Loads BBH data with CoT prompts, identical to evaluation/bbh/run_eval.py."""
+    import glob
+    bbh_dir = os.path.join(data_dir, "bbh")
+    prompt_dir = os.path.join(data_dir, "cot-prompts")
+    
+    if not os.path.exists(bbh_dir) or not os.path.exists(prompt_dir):
+        # Try fallback if data_dir was passed as data/eval
+        bbh_dir = os.path.join(data_dir, "bbh")
+        prompt_dir = os.path.join(data_dir, "bbh/cot-prompts")
+        if not os.path.exists(prompt_dir):
+             raise FileNotFoundError(f"BBH data or prompts not found in {data_dir}")
+
+    all_tasks = {}
+    task_files = glob.glob(os.path.join(bbh_dir, "*.json"))
+    for task_file in task_files:
+        with open(task_file, "r") as f:
+            task_name = os.path.basename(task_file).split(".")[0]
+            all_tasks[task_name] = json.load(f)["examples"]
+
+    all_prompts = {}
+    cot_prompt_files = glob.glob(os.path.join(prompt_dir, "*.txt"))
+    for cot_prompt_file in cot_prompt_files:
+        with open(cot_prompt_file, "r") as f:
+            task_name = os.path.basename(cot_prompt_file).split(".")[0]
+            # Skip first two lines (task description and empty line)
+            task_prompt = "".join(f.readlines()[2:])
+            all_prompts[task_name] = task_prompt
+
+    processed = []
+    for task_name, examples in all_tasks.items():
+        task_prompt = all_prompts.get(task_name, "").strip()
+        for ex in examples:
+            prompt = task_prompt + "\n\nQ: " + ex["input"]
+            response = ex["target"] # For SFT/gradients we use the target
+            processed.append({
+                "prompt": prompt,
+                "response": response,
+                "task": task_name,
+                "doc_id": f"bbh_{task_name}_{ex.get('id', len(processed))}"
+            })
+
+    if n_samples:
+        import random
+        random.seed(42)
+        random.shuffle(processed)
+        processed = processed[:n_samples]
+
+    return processed
+
+
 # Maps t1 split names → JSON filenames from generate_data_splits.py
 _SPLIT_FILE_MAP = {
     "train_anchors": "train_anchors.json",
@@ -334,6 +407,12 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
                 processed.append({"doc_id": f"tulu_{split}_{i}", "prompt": prompt, "response": response})
 
         print(f"   ✓ Loaded {len(processed):,} {split} samples")
+        return processed
+    elif dataset_name == "bbh":
+        # BBH data is usually in data/eval/bbh
+        eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval/bbh")
+        processed = load_bbh_data(eval_data_dir, n_samples=n_samples)
+        print(f"   ✓ Loaded {len(processed):,} BBH samples")
         return processed
     else:
         # For Dolci, Platinum, and MMLU - PASS n_samples to avoid loading everything
@@ -664,8 +743,8 @@ def main():
     )
     parser.add_argument(
         "--dataset", type=str, default="flan",
-        choices=["flan", "dolci", "platinum", "mmlu", "tulu"],
-        help="Dataset to stock (flan, dolci, platinum, mmlu, tulu)"
+        choices=["flan", "dolci", "platinum", "mmlu", "tulu", "bbh"],
+        help="Dataset to stock (flan, dolci, platinum, mmlu, tulu, bbh)"
     )
     parser.add_argument(
         "--train_dataset_name", type=str, default="Harvard-DCML/tulu-v2-197K-processed",

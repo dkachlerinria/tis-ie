@@ -28,9 +28,9 @@ echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
 mkdir -p "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
 
 # Step 1a: Stock train_anchors
-echo "Step 1a: Stocking train_anchors gradients..."
+echo "Step 1a: Stocking train_anchors gradients (using ${BENCHMARK})..."
 python influcoder/gradient_stocking.py \
-    --dataset tulu \
+    --dataset "${BENCHMARK}" \
     --train_dataset_name "${TRAIN_DATASET}" \
     --split train_anchors \
     --model_name "${TRAINING_MODEL}" \
@@ -42,9 +42,9 @@ python influcoder/gradient_stocking.py \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
 # Step 1b: Stock eval_anchors
-echo "Step 1b: Stocking eval_anchors gradients..."
+echo "Step 1b: Stocking eval_anchors gradients (using ${BENCHMARK})..."
 python influcoder/gradient_stocking.py \
-    --dataset tulu \
+    --dataset "${BENCHMARK}" \
     --train_dataset_name "${TRAIN_DATASET}" \
     --split eval_anchors \
     --model_name "${TRAINING_MODEL}" \
@@ -55,7 +55,7 @@ python influcoder/gradient_stocking.py \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
-echo "Step 1c: Stocking pool gradients..."
+echo "Step 1c: Stocking pool gradients (using tulu)..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
     --train_dataset_name "${TRAIN_DATASET}" \
@@ -69,7 +69,7 @@ python influcoder/gradient_stocking.py \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
 # Step 1d: Stock eval_pool
-echo "Step 1d: Stocking eval_pool gradients..."
+echo "Step 1d: Stocking eval_pool gradients (using tulu)..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
     --train_dataset_name "${TRAIN_DATASET}" \

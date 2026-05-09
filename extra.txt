@@ -1,5 +1,7 @@
 pip install POT
 
+pip install tabulate
+
 export CUDA_VISIBLE_DEVICES=0
 export VLLM_USE_V1=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
