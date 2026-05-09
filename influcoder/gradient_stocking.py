@@ -25,7 +25,7 @@ DEFAULT_MODEL = "Qwen/Qwen3-0.6B-Base"
 DEFAULT_PROJ_DIM = 131072
 DEFAULT_SEEDS = [42, 137]
 GRAD_BATCH_SIZE = 4
-MAX_SEQ_LEN = 1024
+MAX_SEQ_LEN = 2048
 
 # Warmup parameters
 WARMUP_LR = 2e-5       # Aligned with paper's 2e-5
@@ -67,55 +67,38 @@ def _flat_ids(x):
         return [int(v) for v in x]
     return [int(x)]
 
-def format_sample(item, dataset_name, tokenizer, max_seq_len=1024):
+def format_sample(item, _dataset_name, tokenizer, max_seq_len=2048):
+    from common.data import encode_with_messages_format
+
     prompt, response = item["prompt"], item["response"]
-    
-    # 100% PARITY with Tulu Chat Format (common/data.py & evaluation/templates.py)
-    def _tulu_format(p, r):
-        # We handle BBH-specific A: suffix here to match run_eval.py:134
-        if dataset_name == "bbh":
-             user_content = p.strip() if isinstance(p, str) else p
-             assistant_content = " A: " + r.strip()
-        else:
-             user_content = p
-             assistant_content = r.strip()
 
-        # Build string according to _concat_messages in common/data.py
-        if isinstance(user_content, list):
-            # It's already a list of messages (from Tulu loader)
-            # We'll use the tokenizer's template if possible, or manual fallback
-            formatted_prompt = tokenizer.apply_chat_template(user_content, tokenize=False, add_generation_prompt=True)
-        else:
-            # Simple string prompt
-            formatted_prompt = f"<|user|>\n{str(user_content).strip()}\n<|assistant|>\n"
-            
-        full_text = formatted_prompt + assistant_content + tokenizer.eos_token + "\n"
-        return formatted_prompt, full_text
+    # Reconstruct messages for encode_with_messages_format (same as LESS)
+    if isinstance(prompt, list):
+        # prompt is already a list of messages (tulu messages format minus last assistant turn)
+        messages = prompt + [{"role": "assistant", "content": response}]
+    else:
+        messages = [{"role": "user", "content": str(prompt).strip()},
+                    {"role": "assistant", "content": str(response).strip()}]
 
-    formatted_prompt, full_text = _tulu_format(prompt, response)
-    
-    # Tokenize independently to find the split point (for label masking)
-    # Match encode_with_messages_format logic
-    full_ids = tokenizer(full_text, add_special_tokens=False).input_ids
-    prompt_ids = tokenizer(formatted_prompt, add_special_tokens=False).input_ids
-    
-    input_ids = full_ids[:max_seq_len]
-    p_len = min(len(prompt_ids), len(input_ids))
-    
+    result = encode_with_messages_format(
+        {"messages": messages}, tokenizer, max_seq_length=max_seq_len, include_response=True
+    )
+
+    input_ids = result["input_ids"]
+    if hasattr(input_ids, "tolist"):
+        input_ids = input_ids.tolist()
+    labels = result["labels"]
+    if hasattr(labels, "tolist"):
+        labels = labels.tolist()
+
     return {
         "input_ids": input_ids,
-        "labels": [-100] * p_len + input_ids[p_len:],
+        "labels": labels,
         "attention_mask": [1] * len(input_ids),
-        "full_text": full_text,
-        "prompt_text": formatted_prompt,
     }
 
-def render_for_storage(item, dataset_name, tokenizer, max_seq_len=1024):
-    fmt = format_sample(item, dataset_name, tokenizer, max_seq_len)
-    full_text, prefix = fmt["full_text"], fmt.get("prompt_text", "")
-    if prefix and full_text.startswith(prefix):
-        return prefix, full_text[len(prefix):]
-    return full_text, ""
+def render_for_storage(*args, **kwargs):
+    return "", ""  # not needed; kept for API compatibility
 
 # =========================================================================
 # 1. Formatting & Masking Builders
