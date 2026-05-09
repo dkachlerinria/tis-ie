@@ -402,9 +402,18 @@ if __name__ == "__main__":
     eval_pool_ids = eval_pool_ids[:cfg['eval_p']]
     
     print(f"\n🔤 Loading gradient tokenizer for text formatting: {args.gradient_model}")
-    from formatting import ensure_chat_template
     gradient_tokenizer = AutoTokenizer.from_pretrained(args.gradient_model)
-    ensure_chat_template(gradient_tokenizer)
+    if getattr(gradient_tokenizer, "chat_template", None) in (None, ""):
+        gradient_tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{% if message['role'] == 'system' %}<|im_start|>system\n{{ message['content'] }}<|im_end|>\n"
+            "{% elif message['role'] == 'user' %}<|im_start|>user\n{{ message['content'] }}<|im_end|>\n"
+            "{% elif message['role'] == 'assistant' %}<|im_start|>assistant\n{{ message['content'] }}<|im_end|>\n"
+            "{% endif %}{% endfor %}"
+            "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
+        )
+    if getattr(gradient_tokenizer, "pad_token", None) is None:
+        gradient_tokenizer.pad_token = gradient_tokenizer.eos_token
 
     print("\n📥 Loading SQLite Data...")
     train_anchors, grads_train_anchors = load_stocked_samples_by_ids(args.anchor_train_db, train_anchor_ids, args.gradient_seed)

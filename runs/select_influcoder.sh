@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# Prerequisite: runs/train_warmup.sh must have been run first (produces CKPT_DIR).
 source runs/config.sh
 
 METHOD="influcoder"
@@ -13,19 +14,21 @@ INFLUCODER_RUN_MODE="small"
 INFLUCODER_PROJ_DIM=131072
 N_ANCHOR_SAMPLES=5000
 N_POOL_SAMPLES=10000
-N_WARMUP_SAMPLES=5000
 INFLUCODER_DB_DIR="$(pwd)/files/index/influcoder_gradients"
-WARMUP_SAVE_DIR="$(pwd)/files/models/influcoder_warmup"
 TRAINED_ENCODER_DIR="$(pwd)/files/models/influence_encoder"
 INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/influcoder_embeds_${END_INDEX}"
+
+# Use the same warmup checkpoint as select_less
+LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
 
 export PYTHONPATH="$(pwd)/influcoder:${PYTHONPATH}"
 
 echo "Starting Influcoder Selection Pipeline..."
+echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
 mkdir -p "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
 
-# Step 1a: Stock train_anchors (runs internal warmup, saves merged model)
-echo "Step 1a: Stocking train_anchors gradients (+ warmup)..."
+# Step 1a: Stock train_anchors
+echo "Step 1a: Stocking train_anchors gradients..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
     --train_dataset_name "${TRAIN_DATASET}" \
@@ -33,13 +36,12 @@ python influcoder/gradient_stocking.py \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
     --n_samples "${N_ANCHOR_SAMPLES}" \
-    --n_warmup "${N_WARMUP_SAMPLES}" \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
-    --save_warmup_path "${WARMUP_SAVE_DIR}" \
+    --load_warmup_path "${LESS_WARMUP_CKPT}" \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
-# Step 1b: Stock eval_anchors (reuses warmed model)
+# Step 1b: Stock eval_anchors
 echo "Step 1b: Stocking eval_anchors gradients..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
@@ -49,7 +51,7 @@ python influcoder/gradient_stocking.py \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
-    --load_warmup_path "${WARMUP_SAVE_DIR}" \
+    --load_warmup_path "${LESS_WARMUP_CKPT}" \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
@@ -63,7 +65,7 @@ python influcoder/gradient_stocking.py \
     --n_samples "${N_POOL_SAMPLES}" \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
-    --load_warmup_path "${WARMUP_SAVE_DIR}" \
+    --load_warmup_path "${LESS_WARMUP_CKPT}" \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
 # Step 1d: Stock eval_pool
@@ -76,7 +78,7 @@ python influcoder/gradient_stocking.py \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
-    --load_warmup_path "${WARMUP_SAVE_DIR}" \
+    --load_warmup_path "${LESS_WARMUP_CKPT}" \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
 
 # Step 2: Train the influence encoder

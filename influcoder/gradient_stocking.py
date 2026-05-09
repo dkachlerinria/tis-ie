@@ -16,9 +16,8 @@ from tqdm import tqdm
 from datasets import load_dataset, get_dataset_config_names, VerificationMode
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch.nn.functional as F
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, PeftConfig, PeftModel
 from torch.utils.data import DataLoader, Dataset
-from formatting import ensure_chat_template, format_sample, render_for_storage
 from torch.nn.utils.rnn import pad_sequence
 
 # ==================== DEFAULTS ====================
@@ -37,6 +36,58 @@ WARMUP_BATCH_SIZE = 4  # Aligned with paper's batch size of 32
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+
+# =========================================================================
+# 0. Formatting utilities (inlined — no external formatting.py dependency)
+# =========================================================================
+
+_CHATML_TEMPLATE = (
+    "{% for message in messages %}"
+    "{% if message['role'] == 'system' %}<|im_start|>system\n{{ message['content'] }}<|im_end|>\n"
+    "{% elif message['role'] == 'user' %}<|im_start|>user\n{{ message['content'] }}<|im_end|>\n"
+    "{% elif message['role'] == 'assistant' %}<|im_start|>assistant\n{{ message['content'] }}<|im_end|>\n"
+    "{% endif %}{% endfor %}"
+    "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
+)
+
+def ensure_chat_template(tokenizer):
+    if getattr(tokenizer, "chat_template", None) in (None, ""):
+        tokenizer.chat_template = _CHATML_TEMPLATE
+    if getattr(tokenizer, "pad_token", None) is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
+
+def _flat_ids(x):
+    if hasattr(x, "input_ids"): return _flat_ids(x.input_ids)
+    if hasattr(x, "get") and "input_ids" in x: return _flat_ids(x["input_ids"])
+    if hasattr(x, "tolist"): return _flat_ids(x.tolist())
+    if isinstance(x, (list, tuple)):
+        if not x: return []
+        if isinstance(x[0], (list, tuple)) or hasattr(x[0], "input_ids"): return _flat_ids(x[0])
+        return [int(v) for v in x]
+    return [int(x)]
+
+def format_sample(item, dataset_name, tokenizer, max_seq_len=1024):
+    prompt, response = item["prompt"], item["response"]
+    messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
+    full_ids = _flat_ids(tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False))
+    prompt_ids = _flat_ids(tokenizer.apply_chat_template(messages[:-1], tokenize=True, add_generation_prompt=True))
+    input_ids = full_ids[:max_seq_len]
+    p_len = min(len(prompt_ids), len(input_ids))
+    return {
+        "input_ids": input_ids,
+        "labels": [-100] * p_len + input_ids[p_len:],
+        "attention_mask": [1] * len(input_ids),
+        "full_text": tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False),
+        "prompt_text": tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True),
+    }
+
+def render_for_storage(item, dataset_name, tokenizer, max_seq_len=1024):
+    fmt = format_sample(item, dataset_name, tokenizer, max_seq_len)
+    full_text, prefix = fmt["full_text"], fmt.get("prompt_text", "")
+    if prefix and full_text.startswith(prefix):
+        return prefix, full_text[len(prefix):]
+    return full_text, ""
 
 # =========================================================================
 # 1. Formatting & Masking Builders
@@ -707,21 +758,26 @@ def main():
 
     # ---- Data loading -------------------------------------------------------
     actual_n_warmup = 10 if args.quick_test else args.n_warmup
+    need_warmup_data = not args.load_warmup_path or args.dry_run
 
+    tokenizer_tmp = AutoTokenizer.from_pretrained(args.model_name)
     if args.data_dir:
         print(f"\n📂 Loading splits from --data_dir: {args.data_dir}")
-        warmup_samples = load_from_json(args.data_dir, "warmup", n_samples=actual_n_warmup)
+        if need_warmup_data:
+            warmup_samples = load_from_json(args.data_dir, "warmup", n_samples=actual_n_warmup)
+        else:
+            warmup_samples = []
         target_samples = load_from_json(args.data_dir, args.split, n_samples=args.n_samples)
     else:
-        print("\n⚠️  No --data_dir provided; downloading from HuggingFace with legacy partitioning.")
-        print("    This may produce DIFFERENT splits than generate_data_splits.py.")
-        tokenizer_tmp = AutoTokenizer.from_pretrained(args.model_name)
-        warmup_samples = load_data_split(
-            args.dataset, "warmup", tokenizer_tmp,
-            n_samples=actual_n_warmup,
-            anchor_size=args.anchor_size, pool_size=args.pool_size,
-            train_dataset_name=args.train_dataset_name
-        )
+        if need_warmup_data:
+            warmup_samples = load_data_split(
+                args.dataset, "warmup", tokenizer_tmp,
+                n_samples=actual_n_warmup,
+                anchor_size=args.anchor_size, pool_size=args.pool_size,
+                train_dataset_name=args.train_dataset_name
+            )
+        else:
+            warmup_samples = []
         target_samples = load_data_split(
             args.dataset, args.split, tokenizer_tmp,
             n_samples=args.n_samples,
@@ -753,10 +809,19 @@ def main():
         print(f"\n🧠 Loading Pre-Warmed Model & Tokenizer: {args.load_warmup_path}")
         tokenizer = AutoTokenizer.from_pretrained(args.load_warmup_path)
         ensure_chat_template(tokenizer)
-            
-        model = AutoModelForCausalLM.from_pretrained(
-            args.load_warmup_path, torch_dtype=torch.bfloat16, device_map="auto"
-        )
+
+        if os.path.exists(os.path.join(args.load_warmup_path, "adapter_config.json")):
+            print("   Detected LoRA checkpoint — loading base model and merging adapter...")
+            peft_cfg = PeftConfig.from_pretrained(args.load_warmup_path)
+            model = AutoModelForCausalLM.from_pretrained(
+                peft_cfg.base_model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto"
+            )
+            model = PeftModel.from_pretrained(model, args.load_warmup_path)
+            model = model.merge_and_unload()
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.load_warmup_path, torch_dtype=torch.bfloat16, device_map="auto"
+            )
         print("   Setting requires_grad for target module parameters...")
         for name, param in model.named_parameters():
             if "embed" in name or "lm_head" in name:
