@@ -373,12 +373,15 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
     elif dataset_name == "tulu":
         hf_path = train_dataset_name or "Harvard-DCML/tulu-v2-197K-processed"
         print(f"📂 Loading {hf_path} (split: {split})...")
-        ds = list(load_dataset(hf_path, split="train"))
+        ds = load_dataset(hf_path, split="train")
+        n = len(ds)
+        
+        # Consistent shuffling
         np.random.seed(42)
-        index = list(range(len(ds)))
+        index = np.arange(n)
         np.random.shuffle(index)
-        n = len(index)
 
+        # Map splits to indices
         n_eval_a = max(1, anchor_size // 5)
         n_eval_p = max(1, pool_size // 5)
 
@@ -398,9 +401,11 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
         if n_samples is not None:
             target_indices = target_indices[:n_samples]
 
+        print(f"   [Tulu] Selecting {len(target_indices)} indices for '{split}'...")
         processed = []
         for i, idx in enumerate(target_indices):
-            item = ds[idx]
+            # Access dataset by index without converting to list
+            item = ds[int(idx)]
             prompt = str(item.get("prompt", item.get("input", "")))
             response = str(item.get("response", item.get("output", "")))
             if response.strip() and len(prompt.strip()) >= 10:

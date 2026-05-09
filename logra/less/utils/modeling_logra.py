@@ -234,12 +234,28 @@ class LoGra:
         self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        # Load base LLM
-        lm_model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch_dtype,
-            strict=False,
-        )
+        # Load base LLM with vocab size mismatch tolerance
+        import os
+        from transformers import AutoConfig
+
+        try:
+            lm_model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch_dtype,
+            )
+        except RuntimeError as e:
+            if "size mismatch" in str(e) and "embed_tokens" in str(e):
+                # Vocab size mismatch: load model from config and then load state dict with strict=False
+                config = AutoConfig.from_pretrained(model_name)
+                lm_model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+
+                # Load weights from checkpoint
+                ckpt_files = [f for f in os.listdir(model_name) if f.startswith("pytorch_model") and f.endswith(".bin")]
+                if ckpt_files:
+                    state_dict = torch.load(os.path.join(model_name, ckpt_files[0]), map_location="cpu")
+                    lm_model.load_state_dict(state_dict, strict=False)
+            else:
+                raise
 
         # Wrap with LoGra
         self.model = LoGraModel(lm_model, rank=rank, only_lora=only_lora, mlp_only=mlp_only)
