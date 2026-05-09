@@ -411,11 +411,12 @@ class LoGra:
         data_iter = tqdm(range(0, len(data), batch_size), disable=not show_progress_bar)
 
         for i in data_iter:
-            batch_data = data[i:i+batch_size]
+            batch_dict = data[i:i+batch_size]
 
             # Use pre-tokenized data from our consistent pipeline
-            batch_input_ids = [torch.tensor(item["input_ids"], dtype=torch.long) for item in batch_data]
-            batch_labels = [torch.tensor(item["labels"], dtype=torch.long) for item in batch_data]
+            # HF Dataset slices return a dict of lists, so we can convert them to tensors directly
+            batch_input_ids = [torch.tensor(ids, dtype=torch.long) for ids in batch_dict["input_ids"]]
+            batch_labels = [torch.tensor(lbls, dtype=torch.long) for lbls in batch_dict["labels"]]
 
             # Pad sequences
             input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=0).to(self.device)
