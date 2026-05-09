@@ -158,7 +158,7 @@ if __name__ == "__main__":
         help='Only apply LoRA to MLP layers'
     )
     parser.add_argument(
-        '--grad_batch_size', type=int, default=1,
+        '--grad_batch_size', type=int, default=8,
         help='Batch size for LoGra encoding'
     )
     parser.add_argument(
