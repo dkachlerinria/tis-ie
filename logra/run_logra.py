@@ -40,8 +40,8 @@ def seed_everything(seed=42):
     set_seed(seed)
 
 def format_for_logra(samples):
-    """Format samples as (input, output) tuples for LoGra encoding."""
-    return [(p, r) for p, r in samples]
+    """Format samples as dicts for LoGra encoding."""
+    return [{"input": p, "output": r} for p, r in samples]
 
 def load_train_data(dataset_name, n_samples=None, end_index=None):
     """Load training dataset from HuggingFace."""
