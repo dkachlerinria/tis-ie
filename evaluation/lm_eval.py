@@ -115,7 +115,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_eval(
-        model_path=args.model_path,
+        model_path=args.model_name_or_path,
         dataset_name=args.dataset_name,
         output_dir=args.output_dir,
         apply_chat_template=args.apply_chat_template,

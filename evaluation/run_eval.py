@@ -170,7 +170,7 @@ def main() -> None:
         cmd = [
             PYTHON,
             "-m",
-            "evaluation.custom_eval",
+            "evaluation.lm_eval",
             "--model_name_or_path",
             args.model_name_or_path,
             "--output_dir",
