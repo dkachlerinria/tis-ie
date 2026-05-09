@@ -8,14 +8,10 @@ from pathlib import Path
 PYTHON = "python3"
 
 
-def run(cmd: list[str], env: dict | None = None) -> None:
+def run(cmd: list[str]) -> None:
     """Run a command, printing it in a copy-pastable form."""
     print("\n>>", " ".join(shlex.quote(c) for c in cmd))
-    import os
-    merged_env = os.environ.copy()
-    if env:
-        merged_env.update(env)
-    subprocess.run(cmd, check=True, env=merged_env)
+    subprocess.run(cmd, check=True)
 
 
 def main() -> None:
@@ -78,14 +74,10 @@ def main() -> None:
 
     # vLLM args
     vllm_args = ["--use_vllm"]
-    vllm_env = {}
     if args.vllm_gpu_memory_utilization:
         vllm_args += ["--vllm_gpu_memory_utilization", str(args.vllm_gpu_memory_utilization)]
     if args.vllm_enforce_eager:
         vllm_args.append("--vllm_enforce_eager")
-    
-    # Force stable vLLM engine V0
-    vllm_env["VLLM_USE_V1"] = "0"
 
     # Chat formatting only when NOT zero-shot (only relevant to minimal_multitask)
     chat_args: list[str] = []
@@ -115,7 +107,7 @@ def main() -> None:
             *chat_args,
             *vllm_args,
         ]
-        run(cmd, env=vllm_env)
+        run(cmd)
 
     elif args.eval_dataset == "tydiqa":
         out_dir = save_dir / "results_tydiqa"
@@ -139,7 +131,7 @@ def main() -> None:
             *chat_args,
             *vllm_args,
         ]
-        run(cmd, env=vllm_env)
+        run(cmd)
 
     elif args.eval_dataset == "bbh":
         out_dir = save_dir / "results_bbh"
@@ -157,7 +149,7 @@ def main() -> None:
             *chat_args,
             *vllm_args,
         ]
-        run(cmd, env=vllm_env)
+        run(cmd)
 
     elif args.eval_dataset == "codex":
         out_dir = save_dir / "results_codex"
@@ -183,7 +175,7 @@ def main() -> None:
             args.model_name_or_path,
             *vllm_args,
         ]
-        run(cmd, env=vllm_env)
+        run(cmd)
 
     elif args.eval_dataset == "mmlu_pro":
         # Requirement: run custom_eval only for mmlu_pro.
@@ -203,7 +195,7 @@ def main() -> None:
         ]
         if not args.zero_shot:
             cmd.append("--apply_chat_template")
-        run(cmd, env=vllm_env)
+        run(cmd)
 
     else:
         raise ValueError(f"Unknown eval_dataset: {args.eval_dataset}")
