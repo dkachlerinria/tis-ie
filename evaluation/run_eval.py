@@ -54,28 +54,6 @@ def main() -> None:
         default=True,
         help="Use vLLM for minimal_multitask evals (default: enabled).",
     )
-    parser.add_argument(
-        "--vllm_gpu_memory_utilization",
-        type=float,
-        default=0.9,
-        help="vLLM GPU memory utilization (default: 0.9).",
-    )
-    parser.add_argument(
-        "--vllm_enforce_eager",
-        action="store_true",
-        help="Enforce eager mode in vLLM (disables CUDA graphs).",
-    )
-    parser.add_argument(
-        "--vllm_max_model_len",
-        type=int,
-        default=None,
-        help="vLLM maximum model length.",
-    )
-    parser.add_argument(
-        "--vllm_disable_chunked_prefill",
-        action="store_true",
-        help="Disable vLLM chunked prefill.",
-    )
 
     # Allow forwarding extra args to the underlying module.
     args, unknown = parser.parse_known_args()
@@ -85,14 +63,6 @@ def main() -> None:
 
     # vLLM args
     vllm_args = ["--use_vllm"]
-    if args.vllm_gpu_memory_utilization:
-        vllm_args += ["--vllm_gpu_memory_utilization", str(args.vllm_gpu_memory_utilization)]
-    if args.vllm_enforce_eager:
-        vllm_args.append("--vllm_enforce_eager")
-    if args.vllm_max_model_len:
-        vllm_args += ["--vllm_max_model_len", str(args.vllm_max_model_len)]
-    if args.vllm_disable_chunked_prefill:
-        vllm_args.append("--vllm_disable_chunked_prefill")
 
     # Chat formatting only when NOT zero-shot (only relevant to minimal_multitask)
     chat_args: list[str] = []
