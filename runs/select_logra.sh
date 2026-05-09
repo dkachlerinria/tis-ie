@@ -12,7 +12,7 @@ RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPL
 # LoGra-specific config
 LOGRA_DIR="$(pwd)/files/logra/${MODEL_SLUG}"
 LOGRA_RANK=8
-GRAD_BATCH_SIZE=8
+GRAD_BATCH_SIZE=4
 
 echo "Starting LoGra Selection Pipeline..."
 mkdir -p "${LOGRA_DIR}"
