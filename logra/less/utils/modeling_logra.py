@@ -238,6 +238,7 @@ class LoGra:
         lm_model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch_dtype,
+            strict=False,
         )
 
         # Wrap with LoGra
