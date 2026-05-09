@@ -6,11 +6,6 @@ import random
 import torch
 
 try:
-    # Force stable vLLM engine V0 and block manager v1
-    os.environ["VLLM_USE_V1"] = "0"
-    os.environ["VLLM_V1"] = "0"
-    os.environ["VLLM_USE_V2"] = "0"
-    os.environ["VLLM_BLOCK_MANAGER_VERSION"] = "v1"
     import vllm
 except ImportError:
     print("VLLM not installed. Will not be able to use VLLM.")
@@ -184,6 +179,8 @@ def main(args):
                 tensor_parallel_size=torch.cuda.device_count(),
                 gpu_memory_utilization=args.vllm_gpu_memory_utilization,
                 enforce_eager=args.vllm_enforce_eager,
+                max_model_len=args.vllm_max_model_len,
+                enable_chunked_prefill=not args.vllm_disable_chunked_prefill,
             )
 
         else:
@@ -476,6 +473,17 @@ if __name__ == "__main__":
         "--vllm_enforce_eager",
         action="store_true",
         help="Enforce eager mode in vLLM (disables CUDA graphs).",
+    )
+    parser.add_argument(
+        "--vllm_max_model_len",
+        type=int,
+        default=None,
+        help="vLLM maximum model length.",
+    )
+    parser.add_argument(
+        "--vllm_disable_chunked_prefill",
+        action="store_true",
+        help="Disable vLLM chunked prefill.",
     )
     parser.add_argument(
         "--use_chat_format",
