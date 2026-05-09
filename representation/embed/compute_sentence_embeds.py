@@ -202,7 +202,7 @@ def main():
 
     parser.add_argument("--dtype", default="bf16")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument(
         "--start_index",
         type=int,
@@ -221,8 +221,7 @@ def main():
     logger.setLevel(logging.INFO)
 
     logger.info("Loading model %s with dtype %s", args.model_name, args.dtype)
-    kwargs = {"torch_dtype": torch.bfloat16}
-    model = SentenceTransformer(args.model_name, model_kwargs=kwargs)
+    model = SentenceTransformer(args.model_name)
 
     logger.info(
         "Model loaded with %.2f billion parameters",
