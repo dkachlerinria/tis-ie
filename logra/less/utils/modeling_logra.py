@@ -245,9 +245,10 @@ class LoGra:
             )
         except RuntimeError as e:
             if "size mismatch" in str(e) and "embed_tokens" in str(e):
-                # Vocab size mismatch: load model from config and then load state dict with strict=False
+                # Vocab size mismatch: load from config without init, then load checkpoint weights
                 config = AutoConfig.from_pretrained(model_name)
-                lm_model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+                with torch.no_grad():
+                    lm_model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype, _init_weights=False)
 
                 # Load weights from checkpoint
                 ckpt_files = [f for f in os.listdir(model_name) if f.startswith("pytorch_model") and f.endswith(".bin")]
