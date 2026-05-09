@@ -351,24 +351,36 @@ class LoGra:
         return prompt, response
 
     def _build_example(self, messages: List[Dict[str, str]]) -> tuple:
-        """Build input_ids and labels using the model's chat template.
-
-        Matches format_instruction in formatting.py so LoGra gradients are
-        computed against the exact same chat-templated text that the encoder,
-        SFT training, and gradient stocking pipelines use.
+        """Build input_ids and labels using the Tulu chat template.
+        
+        Ensures LoGra gradients are computed against the exact same chat-templated 
+        text and label masking as the rest of the pipeline.
         """
-        # Local import to avoid circular dependency at package load time.
-        import sys, os
-        _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if _root not in sys.path:
-            sys.path.insert(0, _root)
-        from formatting import format_instruction, ensure_chat_template
+        # 1. Format text as Tulu ChatML
+        # This matches _concat_messages in common/data.py
+        formatted_prompt = ""
+        for msg in messages[:-1]:
+            role = msg["role"]
+            content = msg["content"].strip()
+            if role == "user":
+                formatted_prompt += f"<|user|>\n{content}\n<|assistant|>\n"
+            elif role == "system":
+                formatted_prompt += f"<|system|>\n{content}\n"
+        
+        response = messages[-1]["content"].strip()
+        full_text = formatted_prompt + response + self.tokenizer.eos_token + "\n"
 
-        ensure_chat_template(self.tokenizer)
-        prompt   = messages[0]["content"]
-        response = messages[1]["content"]
-        out = format_instruction(prompt, response, self.tokenizer, max_seq_len=1024)
-        return out["input_ids"], out["labels"]
+        # 2. Tokenize and Mask
+        full_ids = self.tokenizer(full_text, add_special_tokens=False).input_ids
+        prompt_ids = self.tokenizer(formatted_prompt, add_special_tokens=False).input_ids
+        
+        input_ids = full_ids[:1024]
+        p_len = min(len(prompt_ids), len(input_ids))
+        
+        # Labels: -100 for prompt, actual IDs for response
+        labels = [-100] * p_len + input_ids[p_len:]
+        
+        return input_ids, labels
 
     def encode(
         self,

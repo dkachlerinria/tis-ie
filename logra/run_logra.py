@@ -48,13 +48,23 @@ def load_train_data(dataset_name, n_samples=None, end_index=None):
     logger.info(f"📂 Loading training dataset: {dataset_name}")
     ds = load_dataset(dataset_name, split="train")
 
-    # Apply end_index limit if specified
     if end_index:
         ds = ds.select(range(min(end_index, len(ds))))
 
-    samples = [(item.get("prompt", item.get("input", "")),
-                item.get("response", item.get("output", "")))
-               for item in ds]
+    samples = []
+    for item in ds:
+        # Handle Tulu messages format
+        if "messages" in item and len(item["messages"]) >= 2:
+            msgs = item["messages"]
+            if msgs[-1]["role"] == "assistant":
+                response = msgs[-1]["content"]
+                prompt = msgs[:-1] # List of messages
+                samples.append({"prompt": prompt, "response": response, "pre_formatted": True})
+        else:
+            p = item.get("prompt", item.get("input", item.get("instruction", "")))
+            r = item.get("response", item.get("output", ""))
+            if p and r:
+                samples.append({"prompt": p, "response": r, "pre_formatted": False})
 
     if n_samples:
         random.seed(42)
@@ -68,38 +78,32 @@ def load_dev_data(dataset_name, n_samples=None, end_index=None):
     logger.info(f"📂 Loading dev dataset: {dataset_name}")
 
     if dataset_name.lower() == "bbh":
-        try:
-            bbh_configs = [
-                'boolean_expressions', 'causal_judgement', 'date_understanding',
-                'disambiguation_qa', 'dyck_languages', 'formal_fallacies',
-                'geometric_shapes', 'hyperbaton', 'logical_deduction_five_objects',
-                'logical_deduction_seven_objects', 'logical_deduction_three_objects',
-                'movie_recommendation', 'multistep_arithmetic_two', 'navigate',
-                'object_counting', 'penguins_in_a_table', 'reasoning_about_colored_objects',
-                'ruin_names', 'salient_translation_error_detection', 'snarks',
-                'sports_understanding', 'temporal_sequences', 'tracking_shuffled_objects_five_objects',
-                'tracking_shuffled_objects_seven_objects', 'tracking_shuffled_objects_three_objects',
-                'web_of_lies', 'word_sorting'
-            ]
-            samples = []
-            for config in bbh_configs:
-                try:
-                    ds = load_dataset("lukaemon/bbh", config, split="test")
-                    samples.extend([(item.get("input", ""), item.get("target", ""))
-                                   for item in ds if item.get("target")])
-                except Exception as e:
-                    logger.warning(f"Failed to load BBH config {config}: {e}")
-        except Exception as e:
-            logger.warning(f"Failed to load BBH: {e}")
-            samples = []
+        from evaluation.bbh.run_eval import ALL_TASKS
+        samples = []
+        for task in ALL_TASKS:
+            try:
+                # Load BBH with the same logic as our evaluation pipeline
+                ds = load_dataset("lukaemon/bbh", task, split="test")
+                for item in ds:
+                    p = item.get("input", "")
+                    r = item.get("target", "")
+                    if p and r:
+                        # Mark as bbh to trigger A: suffix in LoGraModel
+                        samples.append({"prompt": p, "response": r, "dataset": "bbh", "pre_formatted": True})
+            except Exception as e:
+                logger.warning(f"Failed to load BBH task {task}: {e}")
     else:
         try:
             ds = load_dataset(dataset_name, split="test")
         except:
             ds = load_dataset(dataset_name, split="validation")
-        samples = [(item.get("prompt", item.get("input", "")),
-                    item.get("response", item.get("output", "")))
-                   for item in ds]
+        
+        samples = []
+        for item in ds:
+            p = item.get("prompt", item.get("input", item.get("instruction", "")))
+            r = item.get("response", item.get("output", ""))
+            if p and r:
+                samples.append({"prompt": p, "response": r, "pre_formatted": True})
 
     if end_index:
         samples = samples[:end_index]
@@ -109,6 +113,7 @@ def load_dev_data(dataset_name, n_samples=None, end_index=None):
 
     logger.info(f"   ✓ Loaded {len(samples):,} dev samples")
     return samples
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -198,7 +203,7 @@ if __name__ == "__main__":
     logger.info(f"\n🧮 Encoding {len(train_samples)} training samples (compute FIM)...")
     logger.info(f"   (Processing {len(train_samples)} samples with batch size {args.grad_batch_size}...)")
     train_embeds = model.encode(
-        format_for_logra(train_samples),
+        train_samples,
         batch_size=args.grad_batch_size,
         is_test=False
     )
@@ -208,7 +213,7 @@ if __name__ == "__main__":
     logger.info(f"\n🧮 Encoding {len(dev_samples)} dev samples (apply FIM)...")
     logger.info(f"   (Processing {len(dev_samples)} samples with batch size {args.grad_batch_size}...)")
     dev_embeds = model.encode(
-        format_for_logra(dev_samples),
+        dev_samples,
         batch_size=args.grad_batch_size,
         is_test=True
     )
