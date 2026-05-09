@@ -413,19 +413,9 @@ class LoGra:
         for i in data_iter:
             batch_data = data[i:i+batch_size]
 
-            # Format and tokenize
-            batch_input_ids = []
-            batch_labels = []
-
-            for item in batch_data:
-                prompt, response = self._format_item(item)
-                messages = [
-                    {'role': 'user', 'content': prompt},
-                    {'role': 'assistant', 'content': response}
-                ]
-                input_ids, labels = self._build_example(messages)
-                batch_input_ids.append(torch.tensor(input_ids, dtype=torch.long))
-                batch_labels.append(torch.tensor(labels, dtype=torch.long))
+            # Use pre-tokenized data from our consistent pipeline
+            batch_input_ids = [torch.tensor(item["input_ids"], dtype=torch.long) for item in batch_data]
+            batch_labels = [torch.tensor(item["labels"], dtype=torch.long) for item in batch_data]
 
             # Pad sequences
             input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=0).to(self.device)
