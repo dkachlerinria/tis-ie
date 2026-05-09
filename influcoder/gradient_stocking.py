@@ -816,6 +816,8 @@ def main():
             model = AutoModelForCausalLM.from_pretrained(
                 peft_cfg.base_model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto"
             )
+            # Match vocab size to checkpoint
+            model.resize_token_embeddings(len(tokenizer))
             model = PeftModel.from_pretrained(model, args.load_warmup_path)
             model = model.merge_and_unload()
         else:

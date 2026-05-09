@@ -111,7 +111,10 @@ def train():
         **kwargs,
     )
     tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-    model.resize_token_embeddings(len(tokenizer))
+    
+    # Only resize if we actually added tokens beyond the original capacity
+    if len(tokenizer) > model.get_input_embeddings().weight.shape[0]:
+        model.resize_token_embeddings(len(tokenizer))
 
     if train_cfg.use_lora:
         if "llama" in train_cfg.model_name.lower():
