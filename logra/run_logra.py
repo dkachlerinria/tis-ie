@@ -62,7 +62,7 @@ def load_train_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
     # Use the EXACT same mapping as LESS
     ds = ds.map(
         lambda x: encode_with_messages_format(
-            example=x, tokenizer=tokenizer, max_seq_length=1024, include_response=True
+            example=x, tokenizer=tokenizer, max_seq_length=2048, include_response=True
         ),
         desc="Tokenizing training data"
     )
@@ -138,7 +138,7 @@ def load_dev_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
     # Use the EXACT same mapping as LESS eval
     ds = ds.map(
         lambda x: construct_test_sample(
-            tokenizer=tokenizer, sample=x, max_length=1024
+            tokenizer=tokenizer, sample=x, max_length=2048
         ),
         desc="Tokenizing dev data"
     )
