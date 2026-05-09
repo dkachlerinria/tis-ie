@@ -182,18 +182,21 @@ if __name__ == "__main__":
 
     # Step 2: Initialize LoGra
     logger.info(f"\n🤖 Initializing LoGra from checkpoint: {args.ckpt_path}")
+    logger.info("   (Loading model, this may take a minute...)")
     try:
         model = LoGra.from_pretrained(
             model_name=args.ckpt_path,
             rank=args.rank,
             mlp_only=args.mlp_only
         )
+        logger.info(f"   ✓ LoGra model loaded successfully")
     except Exception as e:
         logger.error(f"Failed to load LoGra model: {e}")
         exit(1)
 
     # Step 3: Encode training pool (compute FIM + raw gradients)
     logger.info(f"\n🧮 Encoding {len(train_samples)} training samples (compute FIM)...")
+    logger.info(f"   (Processing {len(train_samples)} samples with batch size {args.grad_batch_size}...)")
     train_embeds = model.encode(
         format_for_logra(train_samples),
         batch_size=args.grad_batch_size,
@@ -203,6 +206,7 @@ if __name__ == "__main__":
 
     # Step 4: Encode dev samples (apply FIM preconditioning)
     logger.info(f"\n🧮 Encoding {len(dev_samples)} dev samples (apply FIM)...")
+    logger.info(f"   (Processing {len(dev_samples)} samples with batch size {args.grad_batch_size}...)")
     dev_embeds = model.encode(
         format_for_logra(dev_samples),
         batch_size=args.grad_batch_size,

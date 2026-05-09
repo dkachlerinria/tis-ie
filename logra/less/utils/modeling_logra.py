@@ -254,6 +254,8 @@ class LoGra:
                 if ckpt_files:
                     state_dict = torch.load(os.path.join(model_name, ckpt_files[0]), map_location="cpu")
                     lm_model.load_state_dict(state_dict, strict=False)
+                else:
+                    raise RuntimeError(f"No pytorch_model.bin found in {model_name}")
             else:
                 raise
 

@@ -19,7 +19,7 @@ TRAINED_ENCODER_DIR="$(pwd)/files/models/${MODEL_SLUG}_influence_encoder"
 INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_embeds_${END_INDEX}"
 
 # --- Execution Toggles ---
-FORCE_RECOMPUTE=false  # Set to true to delete existing DBs and re-extract gradients
+FORCE_RECOMPUTE=true  # Set to true to delete existing DBs and re-extract gradients
 RECOMPUTE_FLAG=""
 if [ "$FORCE_RECOMPUTE" = true ]; then
     RECOMPUTE_FLAG="--force_recompute"
