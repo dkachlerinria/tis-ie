@@ -18,6 +18,10 @@ from representation.helper import batch_cosine_similarity
 
 logger = logging.getLogger(__name__)
 
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision("high")
+
+
 
 def load_train_dataset(
     train_dataset_path: str,
@@ -221,10 +225,20 @@ def main():
     logger.setLevel(logging.INFO)
 
     logger.info("Loading model %s with dtype %s", args.model_name, args.dtype)
-    model = SentenceTransformer(args.model_name)
+    
+    model_kwargs = {}
+    if args.dtype == "bf16" or True: # Forcing bf16 as requested
+        model_kwargs["model_kwargs"] = {"torch_dtype": torch.bfloat16}
+    elif args.dtype == "fp16":
+        model_kwargs["model_kwargs"] = {"torch_dtype": torch.float16}
+
+    model = SentenceTransformer(args.model_name, **model_kwargs)
+    if torch.cuda.is_available():
+        model.to("cuda")
 
     logger.info(
-        "Model loaded with %.2f billion parameters",
+        "Model loaded on %s with %.2f billion parameters",
+        model.device,
         sum(p.numel() for p in model.parameters()) / 1e9,
     )
 
