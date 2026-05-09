@@ -264,8 +264,8 @@ if __name__ == "__main__":
         "mlp_only": args.mlp_only,
         "train_dataset": args.train_dataset_name,
         "dev_dataset": args.dev_dataset_name,
-        "n_train": len(train_samples),
-        "n_dev": len(dev_samples),
+        "n_train": len(train_dataset),
+        "n_dev": len(dev_dataset),
         "similarity_shape": similarity_matrix.shape,
     }
     metadata_path = os.path.join(args.output_dir, "logra_metadata.json")
