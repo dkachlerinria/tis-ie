@@ -236,6 +236,7 @@ class LoGra:
 
         # Load base LLM with vocab size mismatch tolerance
         import os
+        import json
         from transformers import AutoConfig
 
         try:
@@ -245,12 +246,19 @@ class LoGra:
             )
         except RuntimeError as e:
             if "size mismatch" in str(e) and "embed_tokens" in str(e):
-                # Vocab size mismatch: load from config without init, then load checkpoint weights
-                config = AutoConfig.from_pretrained(model_name)
-                with torch.no_grad():
-                    lm_model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype, _init_weights=False)
+                # Vocab size mismatch: get base model name from checkpoint config and load that
+                config_path = os.path.join(model_name, "config.json")
+                with open(config_path) as f:
+                    config_dict = json.load(f)
+                base_model = config_dict.get("_name_or_path", model_name)
 
-                # Load weights from checkpoint
+                # Load base model (has correct vocab for its tokenizer)
+                lm_model = AutoModelForCausalLM.from_pretrained(
+                    base_model,
+                    torch_dtype=torch_dtype,
+                )
+
+                # Load checkpoint weights with strict=False to handle vocab mismatch
                 ckpt_files = [f for f in os.listdir(model_name) if f.startswith("pytorch_model") and f.endswith(".bin")]
                 if ckpt_files:
                     state_dict = torch.load(os.path.join(model_name, ckpt_files[0]), map_location="cpu")
