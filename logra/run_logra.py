@@ -62,11 +62,28 @@ def load_dev_data(dataset_name, n_samples=None, end_index=None):
 
     if dataset_name.lower() == "bbh":
         try:
-            ds = load_dataset("lukaemon/bbh", split="test")
-            samples = [(item.get("input", ""), item.get("target", ""))
-                      for item in ds if item.get("target")]
+            bbh_configs = [
+                'boolean_expressions', 'causal_judgement', 'date_understanding',
+                'disambiguation_qa', 'dyck_languages', 'formal_fallacies',
+                'geometric_shapes', 'hyperbaton', 'logical_deduction_five_objects',
+                'logical_deduction_seven_objects', 'logical_deduction_three_objects',
+                'movie_recommendation', 'multistep_arithmetic_two', 'navigate',
+                'object_counting', 'penguins_in_a_table', 'reasoning_about_colored_objects',
+                'ruin_names', 'salient_translation_error_detection', 'snarks',
+                'sports_understanding', 'temporal_sequences', 'tracking_shuffled_objects_five_objects',
+                'tracking_shuffled_objects_seven_objects', 'tracking_shuffled_objects_three_objects',
+                'web_of_lies', 'word_sorting'
+            ]
+            samples = []
+            for config in bbh_configs:
+                try:
+                    ds = load_dataset("lukaemon/bbh", config, split="test")
+                    samples.extend([(item.get("input", ""), item.get("target", ""))
+                                   for item in ds if item.get("target")])
+                except Exception as e:
+                    logger.warning(f"Failed to load BBH config {config}: {e}")
         except Exception as e:
-            logger.warning(f"Failed to load BBH from HF: {e}")
+            logger.warning(f"Failed to load BBH: {e}")
             samples = []
     else:
         try:
