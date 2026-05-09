@@ -398,10 +398,16 @@ if __name__ == "__main__":
     train_pool_ids   = load_all_doc_ids(args.pool_train_db,   args.gradient_seed)
     eval_pool_ids    = load_all_doc_ids(args.pool_eval_db,    args.gradient_seed)
     
+    print(f"   📊 Database Summary (Seed {args.gradient_seed}):")
+    print(f"      - Train Anchors: {len(train_anchor_ids)} IDs")
+    print(f"      - Eval Anchors:  {len(eval_anchor_ids)} IDs")
+    print(f"      - Train Pool:    {len(train_pool_ids)} IDs")
+    print(f"      - Eval Pool:     {len(eval_pool_ids)} IDs")
+
+    if not train_pool_ids:
+        print(f"   ⚠️ WARNING: No IDs found in {args.pool_train_db}. Is the seed correct?")
+
     random.shuffle(train_anchor_ids)
-    random.shuffle(eval_anchor_ids)
-    random.shuffle(train_pool_ids)
-    random.shuffle(eval_pool_ids)
 
     train_anchor_ids = train_anchor_ids[:cfg['train_a']]
     eval_anchor_ids = eval_anchor_ids[:cfg['eval_a']]
