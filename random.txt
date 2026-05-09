@@ -1,0 +1,1 @@
+python3 -m evaluation.run_eval --model_name_or_path "Qwen/Qwen2.5-0.5B" --eval_dataset ${EVAL_DATASET} --save_dir "files/results/zero_shot/llama-2-7b-hf/true_metric/" --zero_shot --use_vllm --vllm_gpu_memory_utilization 0.6 --vllm_enforce_eager

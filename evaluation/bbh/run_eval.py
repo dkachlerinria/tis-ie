@@ -90,6 +90,8 @@ def main(args):
                 ),
                 tokenizer_mode="slow" if args.use_slow_tokenizer else "auto",
                 tensor_parallel_size=torch.cuda.device_count(),
+                gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+                enforce_eager=args.vllm_enforce_eager,
             )
         else:
             print("Loading model and tokenizer with huggingface...")
@@ -288,6 +290,17 @@ if __name__ == "__main__":
         "--use_vllm",
         action="store_true",
         help="If given, we will use the vllm library, which will likely increase the inference throughput.",
+    )
+    parser.add_argument(
+        "--vllm_gpu_memory_utilization",
+        type=float,
+        default=0.9,
+        help="vLLM GPU memory utilization (default: 0.9).",
+    )
+    parser.add_argument(
+        "--vllm_enforce_eager",
+        action="store_true",
+        help="Enforce eager mode in vLLM (disables CUDA graphs).",
     )
     parser.add_argument(
         "--use_chat_format",
