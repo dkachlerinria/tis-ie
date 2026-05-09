@@ -243,7 +243,7 @@ def load_bbh_data(data_dir, n_samples=None, start_index=0):
     import glob
     bbh_dir = os.path.join(data_dir, "bbh")
     prompt_dir = os.path.join(data_dir, "cot-prompts")
-    
+
     if not os.path.exists(bbh_dir) or not os.path.exists(prompt_dir):
         # Try fallback if data_dir was passed as data/eval
         bbh_dir = os.path.join(data_dir, "bbh")
@@ -280,13 +280,20 @@ def load_bbh_data(data_dir, n_samples=None, start_index=0):
                 "doc_id": f"bbh_{task_name}_{ex.get('id', len(processed))}"
             })
 
-    # Sort to ensure stable slicing before shuffle
-    processed = sorted(processed, key=lambda x: x["doc_id"])
-    
+    # Shuffle with fixed seed for reproducibility
+    np.random.seed(42)
+    indices = np.arange(len(processed))
+    np.random.shuffle(indices)
+    processed = [processed[i] for i in indices]
+
+    # Slice using start_index and n_samples
     if n_samples:
         end_index = start_index + n_samples
         processed = processed[start_index:end_index]
-        print(f"   [BBH] Selected {len(processed)} samples from index {start_index} to {end_index}")
+        print(f"   [BBH] Selected {len(processed)} samples from index {start_index} to {end_index} (total BBH: ~{sum(len(ex) for ex in all_tasks.values())})")
+    else:
+        processed = processed[start_index:]
+        print(f"   [BBH] Selected {len(processed)} samples from index {start_index} onwards")
 
     return processed
 

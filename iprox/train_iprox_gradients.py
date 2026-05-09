@@ -15,10 +15,12 @@ import os
 import sys
 import shutil
 
-# Fix IProX internal imports - add current folder to path so its internal
-# 'from utils.x import y' statements can resolve correctly
+# Fix IProX internal imports - add current folder and repo root to path
 script_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.dirname(script_dir)
 sys.path.append(script_dir)
+if repo_root not in sys.path:
+    sys.path.append(repo_root)
 
 import sqlite3
 import torch
@@ -203,17 +205,27 @@ def compute_sample_gradients(
     Compute per-sample gradients using the proxy model.
     Returns: [n_samples, gradient_dim] array
     """
+    from common.data import encode_with_messages_format
     model.eval()  # Set to eval mode but we'll still compute gradients
     all_gradients = []
     
-    from formatting import format_instruction, ensure_chat_template
-    ensure_chat_template(tokenizer)
-
     for prompt, response in tqdm(samples, desc="Computing proxy gradients"):
-        out = format_instruction(prompt, response, tokenizer, max_seq_length)
-        input_ids = torch.tensor(out["input_ids"], dtype=torch.long).unsqueeze(0).to(device)
-        attention_mask = torch.tensor(out["attention_mask"], dtype=torch.long).unsqueeze(0).to(device)
-        labels = torch.tensor(out["labels"], dtype=torch.long).unsqueeze(0).to(device)
+        # Use standardized message formatting
+        messages = [
+            {"role": "user", "content": str(prompt).strip()},
+            {"role": "assistant", "content": str(response).strip()}
+        ]
+        
+        out = encode_with_messages_format(
+            {"messages": messages}, 
+            tokenizer, 
+            max_seq_length=max_seq_length, 
+            include_response=True
+        )
+        
+        input_ids = out["input_ids"].unsqueeze(0).to(device)
+        attention_mask = out["attention_mask"].unsqueeze(0).to(device)
+        labels = out["labels"].unsqueeze(0).to(device)
         
         # Zero gradients
         model.zero_grad(set_to_none=True)
