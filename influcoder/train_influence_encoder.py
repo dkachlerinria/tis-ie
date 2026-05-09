@@ -408,6 +408,9 @@ if __name__ == "__main__":
         print(f"   ⚠️ WARNING: No IDs found in {args.pool_train_db}. Is the seed correct?")
 
     random.shuffle(train_anchor_ids)
+    random.shuffle(eval_anchor_ids)
+    random.shuffle(train_pool_ids)
+    random.shuffle(eval_pool_ids)
 
     train_anchor_ids = train_anchor_ids[:cfg['train_a']]
     eval_anchor_ids = eval_anchor_ids[:cfg['eval_a']]
