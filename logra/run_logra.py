@@ -43,16 +43,23 @@ def format_for_logra(samples):
     """Format samples as (input, output) tuples for LoGra encoding."""
     return [(p, r) for p, r in samples]
 
-def load_train_data(dataset_name, n_samples=None):
+def load_train_data(dataset_name, n_samples=None, end_index=None):
     """Load training dataset from HuggingFace."""
     logger.info(f"📂 Loading training dataset: {dataset_name}")
     ds = load_dataset(dataset_name, split="train")
+
+    # Apply end_index limit if specified
+    if end_index:
+        ds = ds.select(range(min(end_index, len(ds))))
+
     samples = [(item.get("prompt", item.get("input", "")),
                 item.get("response", item.get("output", "")))
                for item in ds]
+
     if n_samples:
         random.seed(42)
         samples = random.sample(samples, min(n_samples, len(samples)))
+
     logger.info(f"   ✓ Loaded {len(samples):,} training samples")
     return samples
 
@@ -166,7 +173,7 @@ if __name__ == "__main__":
 
     # Step 1: Load data
     logger.info("\n📥 Loading datasets...")
-    train_samples = load_train_data(args.train_dataset_name, args.n_train_samples)
+    train_samples = load_train_data(args.train_dataset_name, args.n_train_samples, args.end_index)
     dev_samples = load_dev_data(args.dev_dataset_name, args.n_dev_samples, args.end_index)
 
     if not train_samples or not dev_samples:
