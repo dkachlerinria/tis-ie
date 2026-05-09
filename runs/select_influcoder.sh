@@ -13,7 +13,7 @@ INFLUCODER_RUN_MODE="small"
 INFLUCODER_PROJ_DIM=131072
 N_ANCHOR_SAMPLES=5000
 N_POOL_SAMPLES=10000
-INFLUCODER_DATA_DIR="$(pwd)/files/index/influcoder_data"
+N_WARMUP_SAMPLES=5000
 INFLUCODER_DB_DIR="$(pwd)/files/index/influcoder_gradients"
 WARMUP_SAVE_DIR="$(pwd)/files/models/influcoder_warmup"
 TRAINED_ENCODER_DIR="$(pwd)/files/models/influence_encoder"
@@ -22,82 +22,60 @@ INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/influcoder_embeds_${END_INDEX}"
 export PYTHONPATH="$(pwd)/influcoder:${PYTHONPATH}"
 
 echo "Starting Influcoder Selection Pipeline..."
-mkdir -p "${INFLUCODER_DATA_DIR}" "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
-
-# Step 0: Export tulu-v2 splits to JSON for gradient_stocking --data_dir
-echo "Step 0: Exporting tulu-v2 splits from ${TRAIN_DATASET}..."
-python3 - <<EOF
-import json, os, random
-from datasets import load_dataset
-
-random.seed(42)
-ds = list(load_dataset("${TRAIN_DATASET}", split="train"))
-random.shuffle(ds)
-
-n_a = ${N_ANCHOR_SAMPLES}
-n_p = ${N_POOL_SAMPLES}
-
-def to_rows(items):
-    return [{"prompt": x.get("prompt", x.get("input", "")),
-             "response": x.get("response", x.get("output", ""))} for x in items]
-
-splits = {
-    "train_anchors": ds[:n_a],
-    "eval_anchors":  ds[n_a : n_a + n_a // 5],
-    "train_pool":    ds[n_a + n_a // 5 : n_a + n_a // 5 + n_p],
-    "eval_pool":     ds[n_a + n_a // 5 + n_p : n_a + n_a // 5 + n_p + n_p // 5],
-}
-for name, items in splits.items():
-    path = os.path.join("${INFLUCODER_DATA_DIR}", name + ".json")
-    if not os.path.exists(path):
-        with open(path, "w") as f:
-            json.dump(to_rows(items), f)
-        print("  Wrote " + str(len(items)) + " rows to " + path)
-    else:
-        print("  Skipping " + path + " (already exists)")
-EOF
+mkdir -p "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
 
 # Step 1a: Stock train_anchors (runs internal warmup, saves merged model)
 echo "Step 1a: Stocking train_anchors gradients (+ warmup)..."
 python influcoder/gradient_stocking.py \
-    --dataset flan \
+    --dataset tulu \
+    --train_dataset_name "${TRAIN_DATASET}" \
     --split train_anchors \
-    --data_dir "${INFLUCODER_DATA_DIR}" \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
+    --n_samples "${N_ANCHOR_SAMPLES}" \
+    --n_warmup "${N_WARMUP_SAMPLES}" \
+    --anchor_size "${N_ANCHOR_SAMPLES}" \
+    --pool_size "${N_POOL_SAMPLES}" \
     --save_warmup_path "${WARMUP_SAVE_DIR}" \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
 # Step 1b: Stock eval_anchors (reuses warmed model)
 echo "Step 1b: Stocking eval_anchors gradients..."
 python influcoder/gradient_stocking.py \
-    --dataset flan \
+    --dataset tulu \
+    --train_dataset_name "${TRAIN_DATASET}" \
     --split eval_anchors \
-    --data_dir "${INFLUCODER_DATA_DIR}" \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
+    --anchor_size "${N_ANCHOR_SAMPLES}" \
+    --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${WARMUP_SAVE_DIR}" \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
 echo "Step 1c: Stocking pool gradients..."
 python influcoder/gradient_stocking.py \
-    --dataset flan \
+    --dataset tulu \
+    --train_dataset_name "${TRAIN_DATASET}" \
     --split pool \
-    --data_dir "${INFLUCODER_DATA_DIR}" \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
+    --n_samples "${N_POOL_SAMPLES}" \
+    --anchor_size "${N_ANCHOR_SAMPLES}" \
+    --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${WARMUP_SAVE_DIR}" \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
 # Step 1d: Stock eval_pool
 echo "Step 1d: Stocking eval_pool gradients..."
 python influcoder/gradient_stocking.py \
-    --dataset flan \
+    --dataset tulu \
+    --train_dataset_name "${TRAIN_DATASET}" \
     --split eval_pool \
-    --data_dir "${INFLUCODER_DATA_DIR}" \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
+    --anchor_size "${N_ANCHOR_SAMPLES}" \
+    --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${WARMUP_SAVE_DIR}" \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
 

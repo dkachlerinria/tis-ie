@@ -719,12 +719,14 @@ def main():
         warmup_samples = load_data_split(
             args.dataset, "warmup", tokenizer_tmp,
             n_samples=actual_n_warmup,
-            anchor_size=args.anchor_size, pool_size=args.pool_size
+            anchor_size=args.anchor_size, pool_size=args.pool_size,
+            train_dataset_name=args.train_dataset_name
         )
         target_samples = load_data_split(
             args.dataset, args.split, tokenizer_tmp,
             n_samples=args.n_samples,
-            anchor_size=args.anchor_size, pool_size=args.pool_size
+            anchor_size=args.anchor_size, pool_size=args.pool_size,
+            train_dataset_name=args.train_dataset_name
         )
 
     # ---- Dry-run: verify data and exit without touching model ---------------

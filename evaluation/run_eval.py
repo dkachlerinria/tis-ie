@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-import os
-os.environ["VLLM_USE_V1"] = "0"
-
 import argparse
 import shlex
 import subprocess
