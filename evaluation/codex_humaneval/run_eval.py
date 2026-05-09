@@ -4,6 +4,9 @@ import os
 import random
 
 import torch
+# Force stable vLLM engine V0
+os.environ["VLLM_USE_V1"] = "0"
+
 import vllm
 
 from evaluation.codex_humaneval.data import read_problems, write_jsonl
