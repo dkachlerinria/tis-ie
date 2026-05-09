@@ -241,15 +241,13 @@ def load_raw_dataset(dataset_name, tokenizer, n_samples=None, split=None):
 def load_bbh_data(data_dir, n_samples=None, start_index=0):
     """Loads BBH data with CoT prompts, identical to evaluation/bbh/run_eval.py."""
     import glob
+
+    # data_dir is "data/bbh" or "data/eval/bbh" — both have bbh/ and cot-prompts/ subdirs
     bbh_dir = os.path.join(data_dir, "bbh")
     prompt_dir = os.path.join(data_dir, "cot-prompts")
 
     if not os.path.exists(bbh_dir) or not os.path.exists(prompt_dir):
-        # Try fallback if data_dir was passed as data/eval
-        bbh_dir = os.path.join(data_dir, "bbh")
-        prompt_dir = os.path.join(data_dir, "bbh/cot-prompts")
-        if not os.path.exists(prompt_dir):
-             raise FileNotFoundError(f"BBH data or prompts not found in {data_dir}")
+        raise FileNotFoundError(f"BBH data not found at {bbh_dir} or prompts at {prompt_dir}. data_dir={data_dir}")
 
     all_tasks = {}
     task_files = glob.glob(os.path.join(bbh_dir, "*.json"))
@@ -422,8 +420,16 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
             print(f"   ⚠️ WARNING: No valid Tulu samples found for split '{split}'! Keys: {list(item.keys())}")
         return processed
     elif dataset_name == "bbh":
-        # BBH data is usually in data/eval/bbh
-        eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval")
+        # BBH data is usually in data/eval/bbh (or data/bbh for legacy)
+        eval_data_dir = os.environ.get("EVAL_DATA_DIR", None)
+        if eval_data_dir is None:
+            # Try to find BBH data automatically
+            if os.path.exists("data/eval/bbh"):
+                eval_data_dir = "data/eval/bbh"
+            elif os.path.exists("data/bbh"):
+                eval_data_dir = "data/bbh"
+            else:
+                raise FileNotFoundError("Cannot find BBH data. Set EVAL_DATA_DIR or place data in data/eval/bbh or data/bbh")
         processed = load_bbh_data(eval_data_dir, n_samples=n_samples, start_index=start_index)
         print(f"   ✓ Loaded {len(processed):,} BBH samples")
         return processed
