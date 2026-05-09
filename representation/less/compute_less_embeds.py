@@ -112,26 +112,13 @@ def obtain_gradients_with_adam(model, batch, avg, avg_sq):
     loss = model(**batch).loss
     loss.backward()
 
-    with torch.no_grad():
-        vectorized_grads = torch.cat(
-            [p.grad.view(-1) for n, p in model.named_parameters() if p.grad is not None]
-        )
+    vectorized_grads = torch.cat(
+        [p.grad.view(-1) for n, p in model.named_parameters() if p.grad is not None]
+    )
 
-        # In-place operations to save memory
-        # 1. updated_avg = beta1 * avg + (1 - beta1) * vectorized_grads
-        # We reuse vectorized_grads for this
-        vectorized_grads.mul_(1 - beta1).add_(avg, alpha=beta1)
-        
-        # 2. updated_avg_sq = beta2 * avg_sq + (1 - beta2) * (vectorized_grads_original ** 2)
-        # Note: We need the original grads for the square. 
-        # To be safe, we'll just do the final math directly.
-        # Let's use a slightly more readable but still efficient version:
-        
-        # Re-fetch gradients if we need the original for avg_sq, 
-        # or just use the formula from the paper which often uses the current avg_sq
-        # Actually, LESS uses the static m and v from the checkpoint.
-        denom = avg_sq.clone().add_(eps).sqrt_()
-        vectorized_grads.div_(denom)
+    updated_avg = beta1 * avg + (1 - beta1) * vectorized_grads
+    updated_avg_sq = beta2 * avg_sq + (1 - beta2) * vectorized_grads**2
+    vectorized_grads = updated_avg / torch.sqrt(updated_avg_sq + eps)
 
     return vectorized_grads
 
@@ -223,16 +210,12 @@ def collect_grads(
 
         # add the gradients to the full_grads
         full_grads.append(vectorized_grads)
-        model.zero_grad(set_to_none=True)
+        model.zero_grad()
 
         # project
         if count % project_interval == 0:
             projected_grads.append(_project(full_grads))
-            del vectorized_grads
             full_grads = []
-        
-        if count % 10 == 0:
-            torch.cuda.empty_cache()
 
     if len(full_grads) > 0:
         projected_grads.append(_project(full_grads))
