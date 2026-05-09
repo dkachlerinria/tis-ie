@@ -374,10 +374,6 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
         index = np.arange(n)
         np.random.shuffle(index)
 
-        # Map splits to indices
-        n_eval_a = max(1, anchor_size // 5)
-        n_eval_p = max(1, pool_size // 5)
-
         if n_samples is not None:
             # Explicit slicing
             target_indices = index[start_index : start_index + n_samples]
@@ -884,11 +880,20 @@ def main():
             args.load_warmup_path, torch_dtype=torch.bfloat16, device_map="auto"
         )
 
+    # Expand "all-linear" before setting requires_grad
+    target_modules = args.target_modules
+    if isinstance(target_modules, list) and len(target_modules) == 1 and target_modules[0] == "all-linear":
+        target_modules = [name for name, module in model.named_modules() if isinstance(module, torch.nn.Linear)]
+        print(f"   Expanded 'all-linear' to {len(target_modules)} modules")
+    elif isinstance(target_modules, str) and target_modules == "all-linear":
+        target_modules = [name for name, module in model.named_modules() if isinstance(module, torch.nn.Linear)]
+        print(f"   Expanded 'all-linear' to {len(target_modules)} modules")
+
     print("   Setting requires_grad for target module parameters...")
     for name, param in model.named_parameters():
         if "embed" in name or "lm_head" in name:
             param.requires_grad = False
-        elif any(tm in name for tm in args.target_modules):
+        elif any(tm in name for tm in target_modules):
             param.requires_grad = True
         else:
             param.requires_grad = False
@@ -897,7 +902,7 @@ def main():
     print(f"🎯 EXTRACTING GRADIENTS: {args.split}")
     print("=" * 70)
 
-    extractor = GradientExtractor(model, tokenizer, args.proj_dim, args.seeds, args.dataset, args.target_modules)
+    extractor = GradientExtractor(model, tokenizer, args.proj_dim, args.seeds, args.dataset, target_modules)
     
     # Database initialization
     if args.force_recompute and os.path.exists(db_path):

@@ -13,24 +13,22 @@ RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPL
 INFLUCODER_RUN_MODE="small"
 INFLUCODER_PROJ_DIM=131072
 
-# Data Partitioning (4-way split to prevent leakage)
-N_TRAIN_POOL=4000
-N_EVAL_POOL=200
-N_TRAIN_ANCHORS=1000
-N_EVAL_ANCHORS=100
-INFLUCODER_DB_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_gradients"
-TRAINED_ENCODER_DIR="$(pwd)/files/models/${MODEL_SLUG}_influence_encoder"
-INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_embeds_${END_INDEX}"
+# Data Partitioning
+N_TRAIN_ANCHORS=5000      # From BENCHMARK dataset
+N_EVAL_ANCHORS=1000       # From BENCHMARK dataset
+N_TRAIN_POOL=10000        # From TRAIN_DATASET (tulu)
+N_EVAL_POOL=2000          # From TRAIN_DATASET (tulu)
+
+INFLUCODER_DB_DIR="$(pwd)/files/index/influcoder_gradients"
+TRAINED_ENCODER_DIR="$(pwd)/files/models/influence_encoder"
+INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/influcoder_embeds_${END_INDEX}"
 
 # --- Execution Toggles ---
-FORCE_RECOMPUTE=true  # Set to true to delete existing DBs and re-extract gradients
+FORCE_RECOMPUTE=true
 RECOMPUTE_FLAG=""
 if [ "$FORCE_RECOMPUTE" = true ]; then
     RECOMPUTE_FLAG="--force_recompute"
 fi
-
-# Shared warmup args for gradient_stocking.py to ensure consistency with SFT
-INFLUCODER_WARMUP_ARGS="--lr ${LR} --batch_size ${BATCH_SIZE} --grad_acc ${GRAD_ACC} --epochs ${WARMUP_EPOCHS} --lora_rank ${LORA_RANK} --lora_alpha ${LORA_ALPHA} --lora_dropout ${LORA_DROPOUT} --target_modules ${LORA_TARGET_MODULES}"
 
 echo "Starting Influcoder Selection Pipeline..."
 
@@ -46,16 +44,15 @@ if [ "${CKPT_STEPS}" = "latest" ]; then
     echo "Using latest checkpoint: checkpoint-${CKPT_STEPS}"
 fi
 
-# Use the same warmup checkpoint as select_less
 LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
 echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
 mkdir -p "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
 
-# Step 1a: Stock train_anchors
-echo "Step 1a: Stocking train_anchors gradients (using ${BENCHMARK})..."
+# Step 1a: Stock train_anchors (from BENCHMARK dataset, e.g., BBH)
+echo "Step 1a: Stocking train_anchors from ${BENCHMARK}..."
 python influcoder/gradient_stocking.py \
-    --dataset "${BENCHMARK}" \
-    --train_dataset_name "${TRAIN_DATASET}" \
+    --dataset tulu \
+    --train_dataset_name "${BENCHMARK}" \
     --split train_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
@@ -66,23 +63,24 @@ python influcoder/gradient_stocking.py \
     --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
-# Step 1b: Stock eval_anchors
-echo "Step 1b: Stocking eval_anchors gradients (using ${BENCHMARK})..."
+# Step 1b: Stock eval_anchors (from BENCHMARK dataset)
+START_EVAL_A=${N_TRAIN_ANCHORS}
+echo "Step 1b: Stocking eval_anchors from ${BENCHMARK}..."
 python influcoder/gradient_stocking.py \
-    --dataset "${BENCHMARK}" \
-    --train_dataset_name "${TRAIN_DATASET}" \
+    --dataset tulu \
+    --train_dataset_name "${BENCHMARK}" \
     --split eval_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
     --n_samples "${N_EVAL_ANCHORS}" \
-    --start_index "${N_TRAIN_ANCHORS}" \
+    --start_index "${START_EVAL_A}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
     --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
-# Step 1c: Stock pool
-echo "Step 1c: Stocking pool gradients (using tulu)..."
+# Step 1c: Stock pool (from TRAIN_DATASET, e.g., tulu-v2-197K)
+echo "Step 1c: Stocking pool from ${TRAIN_DATASET}..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
     --train_dataset_name "${TRAIN_DATASET}" \
@@ -96,8 +94,9 @@ python influcoder/gradient_stocking.py \
     --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
-# Step 1d: Stock eval_pool
-echo "Step 1d: Stocking eval_pool gradients (using tulu)..."
+# Step 1d: Stock eval_pool (from TRAIN_DATASET)
+START_EVAL_P=${N_TRAIN_POOL}
+echo "Step 1d: Stocking eval_pool from ${TRAIN_DATASET}..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
     --train_dataset_name "${TRAIN_DATASET}" \
@@ -105,7 +104,7 @@ python influcoder/gradient_stocking.py \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
     --n_samples "${N_EVAL_POOL}" \
-    --start_index "${N_TRAIN_POOL}" \
+    --start_index "${START_EVAL_P}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
     --target_modules ${LORA_TARGET_MODULES} \
