@@ -182,12 +182,7 @@ if __name__ == "__main__":
     print(f"LoGra Settings: Rank={args.rank}, MLP Only={args.mlp_only}")
     print("=" * 70)
 
-    # Step 1: Load data
-    logger.info("\n📥 Loading datasets...")
-    train_dataset = load_train_dataset(args.train_dataset_name, model.tokenizer, args.n_train_samples, args.end_index)
-    dev_dataset = load_dev_dataset(args.dev_dataset_name, model.tokenizer, args.n_dev_samples, args.end_index)
-
-    # Step 2: Initialize LoGra
+    # Step 1: Initialize LoGra
     logger.info(f"\n🤖 Initializing LoGra from checkpoint: {args.ckpt_path}")
     logger.info("   (Loading model, this may take a minute...)")
     try:
@@ -201,6 +196,14 @@ if __name__ == "__main__":
         logger.error(f"Failed to load LoGra model: {e}")
         exit(1)
 
+    # Step 2: Load data (needs model.tokenizer)
+    logger.info("\n📥 Loading datasets...")
+    train_dataset = load_train_dataset(args.train_dataset_name, model.tokenizer, args.n_train_samples, args.end_index)
+    dev_dataset = load_dev_dataset(args.dev_dataset_name, model.tokenizer, args.n_dev_samples, args.end_index)
+
+    # Step 3: Encode training pool (compute FIM + raw gradients)
+    logger.info(f"\n🧮 Encoding {len(train_dataset)} training samples (compute FIM)...")
+    logger.info(f"   (Processing with batch size {args.grad_batch_size}...)")
     train_embeds = model.encode(
         train_dataset,
         batch_size=args.grad_batch_size,
