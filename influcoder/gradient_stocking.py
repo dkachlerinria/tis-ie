@@ -199,7 +199,7 @@ def load_from_json(data_dir: str, split: str, n_samples: int = None) -> list:
     return samples
 
 
-def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = None, anchor_size: int = 10000, pool_size: int = 100000):
+def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = None, anchor_size: int = 10000, pool_size: int = 100000, train_dataset_name: str = None):
     print(f"\n📂 Formatting {dataset_name} dataset for split: {split}")
 
     if dataset_name == "flan":
@@ -246,6 +246,44 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
             
             print(f"   ✓ Loaded {len(processed):,} {split} samples")
             return processed
+    elif dataset_name == "tulu":
+        hf_path = train_dataset_name or "Harvard-DCML/tulu-v2-197K-processed"
+        print(f"📂 Loading {hf_path} (split: {split})...")
+        ds = list(load_dataset(hf_path, split="train"))
+        np.random.seed(42)
+        index = list(range(len(ds)))
+        np.random.shuffle(index)
+        n = len(index)
+
+        n_eval_a = max(1, anchor_size // 5)
+        n_eval_p = max(1, pool_size // 5)
+
+        if split == "train_anchors":
+            target_indices = index[:anchor_size]
+        elif split == "pool":
+            target_indices = index[anchor_size : anchor_size + pool_size]
+        elif split == "warmup":
+            target_indices = index[anchor_size + pool_size : n - n_eval_a - n_eval_p]
+        elif split == "eval_anchors":
+            target_indices = index[n - n_eval_a - n_eval_p : n - n_eval_p]
+        elif split == "eval_pool":
+            target_indices = index[n - n_eval_p :]
+        else:
+            raise ValueError(f"Unknown split '{split}'")
+
+        if n_samples is not None:
+            target_indices = target_indices[:n_samples]
+
+        processed = []
+        for i, idx in enumerate(target_indices):
+            item = ds[idx]
+            prompt = str(item.get("prompt", item.get("input", "")))
+            response = str(item.get("response", item.get("output", "")))
+            if response.strip() and len(prompt.strip()) >= 10:
+                processed.append({"doc_id": f"tulu_{split}_{i}", "prompt": prompt, "response": response})
+
+        print(f"   ✓ Loaded {len(processed):,} {split} samples")
+        return processed
     else:
         # For Dolci, Platinum, and MMLU - PASS n_samples to avoid loading everything
         raw_samples = load_raw_dataset(dataset_name, tokenizer, n_samples=n_samples, split=split)
@@ -575,8 +613,12 @@ def main():
     )
     parser.add_argument(
         "--dataset", type=str, default="flan",
-        choices=["flan", "dolci", "platinum", "mmlu"],
-        help="Dataset to stock (flan, dolci, platinum, mmlu)"
+        choices=["flan", "dolci", "platinum", "mmlu", "tulu"],
+        help="Dataset to stock (flan, dolci, platinum, mmlu, tulu)"
+    )
+    parser.add_argument(
+        "--train_dataset_name", type=str, default="Harvard-DCML/tulu-v2-197K-processed",
+        help="HuggingFace dataset path used when --dataset tulu is set."
     )
     parser.add_argument(
         "--split", type=str, required=True,
