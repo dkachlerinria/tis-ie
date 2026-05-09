@@ -6,6 +6,7 @@ Includes Dolci, Platinum, & MMLU dataset support while maintaining original text
 """
 
 import os
+import sys
 import json
 import argparse
 import sqlite3
@@ -19,6 +20,9 @@ import torch.nn.functional as F
 from peft import LoraConfig, get_peft_model, PeftConfig, PeftModel
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
+
+# Add parent directory to path so we can import common, representation, etc.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ==================== DEFAULTS ====================
 DEFAULT_MODEL = "Qwen/Qwen3-0.6B-Base"
