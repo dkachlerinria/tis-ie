@@ -8,12 +8,12 @@ import re
 import torch
 import tqdm
 
-import os
-
-# Force stable vLLM engine V0
-os.environ["VLLM_USE_V1"] = "0"
-
 try:
+    # Force stable vLLM engine V0 and block manager v1
+    os.environ["VLLM_USE_V1"] = "0"
+    os.environ["VLLM_V1"] = "0"
+    os.environ["VLLM_USE_V2"] = "0"
+    os.environ["VLLM_BLOCK_MANAGER_VERSION"] = "v1"
     import vllm
 except ImportError:
     print("VLLM not installed. Will not be able to use VLLM.")
