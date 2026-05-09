@@ -14,10 +14,10 @@ INFLUCODER_RUN_MODE="small"
 INFLUCODER_PROJ_DIM=131072
 
 # Data Partitioning
-N_TRAIN_ANCHORS=5000      # From BENCHMARK dataset
-N_EVAL_ANCHORS=1000       # From BENCHMARK dataset
-N_TRAIN_POOL=10000        # From TRAIN_DATASET (tulu)
-N_EVAL_POOL=2000          # From TRAIN_DATASET (tulu)
+N_TRAIN_ANCHORS=200      # From BENCHMARK dataset
+N_EVAL_ANCHORS=100       # From BENCHMARK dataset
+N_TRAIN_POOL=200        # From TRAIN_DATASET (tulu)
+N_EVAL_POOL=100          # From TRAIN_DATASET (tulu)
 
 INFLUCODER_DB_DIR="$(pwd)/files/index/influcoder_gradients"
 TRAINED_ENCODER_DIR="$(pwd)/files/models/influence_encoder"
