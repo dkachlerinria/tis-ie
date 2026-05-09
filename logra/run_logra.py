@@ -74,23 +74,39 @@ def load_dev_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
     logger.info(f"📂 Loading dev dataset: {dataset_name}")
 
     if dataset_name.lower() == "bbh":
-        # Match Influence-Encoder (gradient_stocking.py) exactly
+        # 1. Try local files first (Cluster path)
         eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval/bbh")
         import glob
         task_files = glob.glob(os.path.join(eval_data_dir, "*.json"))
         
-        if not task_files:
-             logger.warning(f"   ⚠️ WARNING: No BBH tasks found in {eval_data_dir}. Dataset will be empty!")
-        
         raw_samples = []
-        for task_file in task_files:
-            with open(task_file, "r") as f:
-                data = json.load(f)
-                for ex in data["examples"]:
-                    raw_samples.append({
-                        "prompts": ex["input"], 
-                        "labels": ex["target"]
-                    })
+        if task_files:
+            logger.info(f"   📂 Found {len(task_files)} local BBH task files in {eval_data_dir}")
+            for task_file in task_files:
+                with open(task_file, "r") as f:
+                    data = json.load(f)
+                    for ex in data["examples"]:
+                        raw_samples.append({"prompts": ex["input"], "labels": ex["target"]})
+        else:
+            # 2. Fallback to HuggingFace if local files are missing
+            logger.info("   ⚠️ No local BBH files found. Falling back to HuggingFace (lukaemon/bbh)...")
+            bbh_tasks = [
+                'boolean_expressions', 'causal_judgement', 'date_understanding', 'disambiguation_qa',
+                'dyck_languages', 'formal_fallacies', 'geometric_shapes', 'hyperbaton',
+                'logical_deduction_five_objects', 'logical_deduction_seven_objects', 'logical_deduction_three_objects',
+                'movie_recommendation', 'multistep_arithmetic_two', 'navigate', 'object_counting',
+                'penguins_in_a_table', 'reasoning_about_colored_objects', 'ruin_names',
+                'salient_translation_error_detection', 'snarks', 'sports_understanding',
+                'temporal_sequences', 'tracking_shuffled_objects_five_objects', 'tracking_shuffled_objects_seven_objects',
+                'tracking_shuffled_objects_three_objects', 'web_of_lies', 'word_sorting'
+            ]
+            for task in bbh_tasks:
+                try:
+                    ds = load_dataset("lukaemon/bbh", task, split="test")
+                    for item in ds:
+                        raw_samples.append({"prompts": item["input"], "labels": item["target"]})
+                except Exception as e:
+                    logger.warning(f"      Failed to load HF BBH task {task}: {e}")
         
         from datasets import Dataset
         ds = Dataset.from_list(raw_samples)
@@ -109,7 +125,7 @@ def load_dev_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
         ds = ds.map(rename_keys)
 
     if len(ds) == 0:
-        logger.error(f"❌ Error: Dataset '{dataset_name}' is empty. Check paths or environment variables (EVAL_DATA_DIR).")
+        logger.error(f"❌ Error: Dataset '{dataset_name}' is empty. Check paths or internet connection.")
         exit(1)
 
     if end_index:
