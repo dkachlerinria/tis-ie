@@ -336,6 +336,8 @@ if __name__ == "__main__":
     parser.add_argument("--compute_test_grads", action="store_true")
     parser.add_argument("--save_original", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--gradient_batch_size", type=int, default=1, help="Batch size for gradient extraction.")
+    parser.add_argument("--project_interval", type=int, default=16, help="How many samples to project at once.")
 
     args = parser.parse_args()
 
@@ -387,7 +389,7 @@ if __name__ == "__main__":
                 )
 
         train_dataloader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=1, shuffle=False
+            train_dataset, batch_size=args.gradient_batch_size, shuffle=False
         )
 
         train_grads = collect_grads(
@@ -396,6 +398,7 @@ if __name__ == "__main__":
             proj_dim=args.proj_dim,
             adam_optimizer_state=adam_optimizer_state,
             gradient_type=args.gradient_type,
+            project_interval=args.project_interval,
         )
 
         if args.save_original:
@@ -440,7 +443,7 @@ if __name__ == "__main__":
             type="torch", columns=["input_ids", "attention_mask", "labels"]
         )
         dev_dataloader = torch.utils.data.DataLoader(
-            dev_dataset, batch_size=1, shuffle=False
+            dev_dataset, batch_size=args.gradient_batch_size, shuffle=False
         )
 
         dev_grads = collect_grads(
@@ -449,6 +452,7 @@ if __name__ == "__main__":
             proj_dim=args.proj_dim,
             adam_optimizer_state=adam_optimizer_state,
             gradient_type=args.gradient_type,
+            project_interval=args.project_interval,
         )
         # save dev grads
         if args.save_original:

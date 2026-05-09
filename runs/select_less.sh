@@ -10,6 +10,10 @@ MODEL_DIR="${MODEL_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_
 RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPLES}_subset_${END_INDEX}"
 LESS_DIR="$(pwd)/files/less/${MODEL_SLUG}"
 
+# Performance Tuning (A30 optimized)
+PROJ_DIM=8192
+PROJECT_INTERVAL= 8
+
 echo "Starting LESS Selection Pipeline..."
 
 # Resolve "latest" checkpoint if specified
@@ -36,7 +40,8 @@ for step in ${CKPT_STEPS}; do
         --compute_train_grads \
         --compute_dev_grads \
         --end_index "${END_INDEX}" \
-        --proj_dim "${PROJ_DIM}"
+        --proj_dim "${PROJ_DIM}" \
+        --project_interval "${PROJECT_INTERVAL}"
 done
 
 # Step 2: Compute LESS Influence/Similarity Matrix
