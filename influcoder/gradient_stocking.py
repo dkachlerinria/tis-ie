@@ -97,8 +97,14 @@ def format_sample(item, _dataset_name, tokenizer, max_seq_len=2048):
         "attention_mask": [1] * len(input_ids),
     }
 
-def render_for_storage(*args, **kwargs):
-    return "", ""  # not needed; kept for API compatibility
+def render_for_storage(item, *args, **kwargs):
+    """Return (prompt_text, response_text) for storage in the documents table."""
+    prompt = item.get("prompt", "")
+    response = item.get("response", "")
+    if isinstance(prompt, list):
+        # Flatten message list back to a single string
+        prompt = " ".join(m.get("content", "") for m in prompt if m.get("role") != "assistant")
+    return str(prompt), str(response)
 
 # =========================================================================
 # 1. Formatting & Masking Builders
