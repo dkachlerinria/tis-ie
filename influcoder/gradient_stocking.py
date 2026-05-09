@@ -74,15 +74,21 @@ def format_sample(item, dataset_name, tokenizer, max_seq_len=1024):
     def _tulu_format(p, r):
         # We handle BBH-specific A: suffix here to match run_eval.py:134
         if dataset_name == "bbh":
-             # run_eval.py:131-134
-             user_content = p.strip()
+             user_content = p.strip() if isinstance(p, str) else p
              assistant_content = " A: " + r.strip()
         else:
-             user_content = p.strip()
+             user_content = p
              assistant_content = r.strip()
 
         # Build string according to _concat_messages in common/data.py
-        formatted_prompt = f"<|user|>\n{user_content}\n<|assistant|>\n"
+        if isinstance(user_content, list):
+            # It's already a list of messages (from Tulu loader)
+            # We'll use the tokenizer's template if possible, or manual fallback
+            formatted_prompt = tokenizer.apply_chat_template(user_content, tokenize=False, add_generation_prompt=True)
+        else:
+            # Simple string prompt
+            formatted_prompt = f"<|user|>\n{str(user_content).strip()}\n<|assistant|>\n"
+            
         full_text = formatted_prompt + assistant_content + tokenizer.eos_token + "\n"
         return formatted_prompt, full_text
 
@@ -404,14 +410,33 @@ def load_data_split(dataset_name: str, split: str, tokenizer, n_samples: int = N
         print(f"   [Tulu] Selecting {len(target_indices)} indices for '{split}'...")
         processed = []
         for i, idx in enumerate(target_indices):
-            # Access dataset by index without converting to list
             item = ds[int(idx)]
-            prompt = str(item.get("prompt", item.get("input", "")))
-            response = str(item.get("response", item.get("output", "")))
-            if response.strip() and len(prompt.strip()) >= 10:
-                processed.append({"doc_id": f"tulu_{split}_{i}", "prompt": prompt, "response": response})
+            p_val, r_val = None, None
 
-        print(f"   ✓ Loaded {len(processed):,} {split} samples")
+            # 1. Try 'messages' format (common in Tulu v2)
+            if "messages" in item and len(item["messages"]) >= 2:
+                msgs = item["messages"]
+                if msgs[-1]["role"] == "assistant":
+                    r_val = msgs[-1]["content"]
+                    p_val = msgs[:-1] # List of messages
+                else:
+                    continue
+            else:
+                # 2. Fallback to simple keys
+                p_val = item.get("prompt", item.get("input", item.get("instruction", "")))
+                r_val = item.get("response", item.get("output", ""))
+
+            if r_val and p_val:
+                processed.append({
+                    "doc_id": f"tulu_{split}_{i}", 
+                    "prompt": p_val, 
+                    "response": r_val
+                })
+
+        if processed:
+            print(f"   ✓ Loaded {len(processed):,} {split} samples (Example ID: {processed[0]['doc_id']})")
+        else:
+            print(f"   ⚠️ WARNING: No valid Tulu samples found for split '{split}'! Keys: {list(item.keys())}")
         return processed
     elif dataset_name == "bbh":
         # BBH data is usually in data/eval/bbh
