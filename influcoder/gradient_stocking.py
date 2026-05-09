@@ -808,53 +808,17 @@ def main():
         help=f"Random seeds for projections (default: {DEFAULT_SEEDS})"
     )
     parser.add_argument(
-        "--quick_test", action="store_true",
-        help="Quick test mode: limits warmup to 10 samples. Use with --n_samples for testing."
-    )
-    parser.add_argument(
         "--output_name", type=str, default=None,
         help="Custom output filename (without .sqlite extension)."
     )
     parser.add_argument(
-        "--save_warmup_path", type=str, default=None,
-        help="Path to save the model and tokenizer after the warmup SFT phase."
-    )
-    parser.add_argument(
-        "--load_warmup_path", type=str, default=None,
-        help="Path to load a pre-warmed model from, bypassing the warmup SFT phase."
+        "--load_warmup_path", type=str, required=True,
+        help="Path to the pre-warmed model (LESS warmup checkpoint)."
     )
     parser.add_argument(
         "--target_modules", type=str, nargs="+",
         default=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         help="Module names to compute gradients for (default: LoRA target modules)"
-    )
-    parser.add_argument(
-        "--lr", type=float, default=2e-5,
-        help="Learning rate for warmup SFT"
-    )
-    parser.add_argument(
-        "--batch_size", type=int, default=4,
-        help="Batch size for warmup SFT"
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=2,
-        help="Number of epochs for warmup SFT"
-    )
-    parser.add_argument(
-        "--grad_acc", type=int, default=1,
-        help="Gradient accumulation steps for warmup SFT"
-    )
-    parser.add_argument(
-        "--lora_rank", type=int, default=16,
-        help="LoRA rank for warmup SFT"
-    )
-    parser.add_argument(
-        "--lora_alpha", type=int, default=32,
-        help="LoRA alpha for warmup SFT"
-    )
-    parser.add_argument(
-        "--lora_dropout", type=float, default=0.05,
-        help="LoRA dropout for warmup SFT"
     )
     parser.add_argument(
         "--force_recompute", action="store_true",
@@ -866,8 +830,7 @@ def main():
     if args.output_name:
         db_path = f"{args.output_name}.sqlite"
     else:
-        suffix = "_QUICK" if args.quick_test else ""
-        db_path = f"{args.dataset}_{args.split}_d{args.proj_dim}_gradients{suffix}.sqlite"
+        db_path = f"{args.dataset}_{args.split}_d{args.proj_dim}_gradients.sqlite"
 
     print("=" * 70)
     print("🧬 GRADIENT STOCKING PIPELINE")
@@ -878,27 +841,11 @@ def main():
     print(f"Output: {db_path}")
 
     # ---- Data loading -------------------------------------------------------
-    actual_n_warmup = 10 if args.quick_test else args.n_warmup
-    need_warmup_data = not args.load_warmup_path or args.dry_run
-
     tokenizer_tmp = AutoTokenizer.from_pretrained(args.model_name)
     if args.data_dir:
         print(f"\n📂 Loading splits from --data_dir: {args.data_dir}")
-        if need_warmup_data:
-            warmup_samples = load_from_json(args.data_dir, "warmup", n_samples=actual_n_warmup)
-        else:
-            warmup_samples = []
         target_samples = load_from_json(args.data_dir, args.split, n_samples=args.n_samples)
     else:
-        if need_warmup_data:
-            warmup_samples = load_data_split(
-                args.dataset, "warmup", tokenizer_tmp,
-                n_samples=actual_n_warmup,
-                start_index=0, # Warmup starts at 0 unless specified otherwise
-                train_dataset_name=args.train_dataset_name
-            )
-        else:
-            warmup_samples = []
         target_samples = load_data_split(
             args.dataset, args.split, tokenizer_tmp,
             n_samples=args.n_samples,
@@ -911,69 +858,40 @@ def main():
         print("\n" + "=" * 70)
         print("🔍 DRY RUN — Data Verification (no model loaded)")
         print("=" * 70)
-        print(f"  Warmup samples : {len(warmup_samples):,}")
         print(f"  Target ({args.split}) : {len(target_samples):,}")
-        if warmup_samples:
-            print(f"  Warmup doc_ids (first 3) : {[s['doc_id'] for s in warmup_samples[:3]]}")
         if target_samples:
             print(f"  Target doc_ids (first 3) : {[s['doc_id'] for s in target_samples[:3]]}")
-        warmup_ids = {s['doc_id'] for s in warmup_samples}
-        target_ids = {s['doc_id'] for s in target_samples}
-        overlap = warmup_ids & target_ids
-        print(f"  Warmup/target overlap    : {len(overlap)} (should be 0)")
         print("=" * 70)
         print("✅ Data verification complete — exiting (--dry_run).")
         return
 
-    # ---- Model loading ------------------------------------------------------
-    if args.load_warmup_path:
-        print(f"\n🧠 Loading Pre-Warmed Model & Tokenizer: {args.load_warmup_path}")
-        tokenizer = AutoTokenizer.from_pretrained(args.load_warmup_path)
-        ensure_chat_template(tokenizer)
+    # ---- Model loading (always from pre-warmed checkpoint) ------------------
+    print(f"\n🧠 Loading Pre-Warmed Model & Tokenizer: {args.load_warmup_path}")
+    tokenizer = AutoTokenizer.from_pretrained(args.load_warmup_path)
+    ensure_chat_template(tokenizer)
 
-        if os.path.exists(os.path.join(args.load_warmup_path, "adapter_config.json")):
-            print("   Detected LoRA checkpoint — loading base model and merging adapter...")
-            peft_cfg = PeftConfig.from_pretrained(args.load_warmup_path)
-            model = AutoModelForCausalLM.from_pretrained(
-                peft_cfg.base_model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto"
-            )
-            # Match vocab size to checkpoint
-            model.resize_token_embeddings(len(tokenizer))
-            model = PeftModel.from_pretrained(model, args.load_warmup_path)
-            model = model.merge_and_unload()
-        else:
-            model = AutoModelForCausalLM.from_pretrained(
-                args.load_warmup_path, torch_dtype=torch.bfloat16, device_map="auto"
-            )
-        print("   Setting requires_grad for target module parameters...")
-        for name, param in model.named_parameters():
-            if "embed" in name or "lm_head" in name:
-                param.requires_grad = False
-            elif any(tm in name for tm in args.target_modules):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
-    else:
-        print(f"\n🧠 Loading Model & Tokenizer: {args.model_name}")
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-        ensure_chat_template(tokenizer)
-
+    if os.path.exists(os.path.join(args.load_warmup_path, "adapter_config.json")):
+        print("   Detected LoRA checkpoint — loading base model and merging adapter...")
+        peft_cfg = PeftConfig.from_pretrained(args.load_warmup_path)
         model = AutoModelForCausalLM.from_pretrained(
-            args.model_name, torch_dtype=torch.bfloat16, device_map="auto"
+            peft_cfg.base_model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto"
+        )
+        model.resize_token_embeddings(len(tokenizer))
+        model = PeftModel.from_pretrained(model, args.load_warmup_path)
+        model = model.merge_and_unload()
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.load_warmup_path, torch_dtype=torch.bfloat16, device_map="auto"
         )
 
-        # Run the warmup phase
-        model = warmup_sft(
-            model, tokenizer, warmup_samples, actual_n_warmup, args.dataset, args.target_modules,
-            lr=args.lr, batch_size=args.batch_size, grad_acc=args.grad_acc, epochs=args.epochs,
-            lora_rank=args.lora_rank, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout
-        )
-        
-        if args.save_warmup_path:
-            os.makedirs(args.save_warmup_path, exist_ok=True)
-            print(f"\n💾 Saving Warmed-Up Model to {args.save_warmup_path}")
-            model.save_pretrained(args.save_warmup_path)
-            tokenizer.save_pretrained(args.save_warmup_path)
+    print("   Setting requires_grad for target module parameters...")
+    for name, param in model.named_parameters():
+        if "embed" in name or "lm_head" in name:
+            param.requires_grad = False
+        elif any(tm in name for tm in args.target_modules):
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
 
     print("\n" + "=" * 70)
     print(f"🎯 EXTRACTING GRADIENTS: {args.split}")
