@@ -250,6 +250,14 @@ class LoGra:
                 torch_dtype=torch_dtype,
             )
 
+            # Load tokenizer from checkpoint to get vocab size
+            tokenizer_ckpt = AutoTokenizer.from_pretrained(model_name)
+            ckpt_vocab_size = len(tokenizer_ckpt)
+
+            # Resize base model embeddings if vocab size differs
+            if lm_model.get_input_embeddings().weight.shape[0] != ckpt_vocab_size:
+                lm_model.resize_token_embeddings(ckpt_vocab_size)
+
             # Load and merge LoRA adapter
             lm_model = PeftModel.from_pretrained(lm_model, model_name)
             lm_model = lm_model.merge_and_unload()
