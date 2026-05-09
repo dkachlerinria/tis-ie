@@ -20,8 +20,11 @@ from transformers import set_seed
 from datasets import load_dataset
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(script_dir)
 if script_dir not in sys.path:
     sys.path.append(script_dir)
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
 sys.path.append(os.path.join(script_dir, 'less'))
 
 from less.utils.modeling_logra import LoGra
@@ -78,9 +81,20 @@ def load_dev_data(dataset_name, n_samples=None, end_index=None):
     logger.info(f"📂 Loading dev dataset: {dataset_name}")
 
     if dataset_name.lower() == "bbh":
-        from evaluation.bbh.run_eval import ALL_TASKS
+        bbh_tasks = [
+            'boolean_expressions', 'causal_judgement', 'date_understanding',
+            'disambiguation_qa', 'dyck_languages', 'formal_fallacies',
+            'geometric_shapes', 'hyperbaton', 'logical_deduction_five_objects',
+            'logical_deduction_seven_objects', 'logical_deduction_three_objects',
+            'movie_recommendation', 'multistep_arithmetic_two', 'navigate',
+            'object_counting', 'penguins_in_a_table', 'reasoning_about_colored_objects',
+            'ruin_names', 'salient_translation_error_detection', 'snarks',
+            'sports_understanding', 'temporal_sequences', 'tracking_shuffled_objects_five_objects',
+            'tracking_shuffled_objects_seven_objects', 'tracking_shuffled_objects_three_objects',
+            'web_of_lies', 'word_sorting'
+        ]
         samples = []
-        for task in ALL_TASKS:
+        for task in bbh_tasks:
             try:
                 # Load BBH with the same logic as our evaluation pipeline
                 ds = load_dataset("lukaemon/bbh", task, split="test")
