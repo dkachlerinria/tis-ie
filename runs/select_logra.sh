@@ -12,7 +12,6 @@ RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPL
 # LoGra-specific config
 LOGRA_DIR="$(pwd)/files/logra/${MODEL_SLUG}"
 LOGRA_RANK=8
-LOGRA_MLP_ONLY=false
 
 echo "Starting LoGra Selection Pipeline..."
 mkdir -p "${LOGRA_DIR}"
@@ -25,7 +24,6 @@ python3 logra/run_logra.py \
     --dev_dataset_name "${BENCHMARK}" \
     --output_dir "${LOGRA_DIR}" \
     --rank "${LOGRA_RANK}" \
-    --mlp_only "${LOGRA_MLP_ONLY}" \
     --end_index "${END_INDEX}"
 
 # Step 2: Perform Data Selection

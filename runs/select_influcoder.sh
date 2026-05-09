@@ -39,6 +39,7 @@ python influcoder/gradient_stocking.py \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
+    --force_recompute \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
 # Step 1b: Stock eval_anchors
@@ -49,9 +50,11 @@ python influcoder/gradient_stocking.py \
     --split eval_anchors \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
+    --n_samples "${N_ANCHOR_SAMPLES}" \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
+    --force_recompute \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
@@ -66,6 +69,7 @@ python influcoder/gradient_stocking.py \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
+    --force_recompute \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
 # Step 1d: Stock eval_pool
@@ -76,9 +80,11 @@ python influcoder/gradient_stocking.py \
     --split eval_pool \
     --model_name "${TRAINING_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
+    --n_samples "${N_POOL_SAMPLES}" \
     --anchor_size "${N_ANCHOR_SAMPLES}" \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
+    --force_recompute \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
 
 # Step 2: Train the influence encoder
