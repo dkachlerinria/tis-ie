@@ -12,8 +12,8 @@ RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPL
 # --- Influcoder-specific config ---
 INFLUCODER_RUN_MODE="small"
 INFLUCODER_PROJ_DIM=131072
-N_ANCHOR_SAMPLES=5000
-N_POOL_SAMPLES=10000
+N_ANCHOR_SAMPLES=50
+N_POOL_SAMPLES=100
 INFLUCODER_DB_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_gradients"
 TRAINED_ENCODER_DIR="$(pwd)/files/models/${MODEL_SLUG}_influence_encoder"
 INFLUCODER_EMBEDS_DIR="$(pwd)/files/index/${MODEL_SLUG}_influcoder_embeds_${END_INDEX}"
