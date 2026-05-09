@@ -72,6 +72,8 @@ python influcoder/gradient_stocking.py \
     --force_recompute \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
+# Hello
+
 # Step 1d: Stock eval_pool
 echo "Step 1d: Stocking eval_pool gradients (using tulu)..."
 python influcoder/gradient_stocking.py \
