@@ -436,6 +436,9 @@ class LoGra:
             if i % 10 == 0:
                 torch.cuda.empty_cache()
 
+        if not all_embeds:
+            raise ValueError(f"No embeddings were collected for {len(data)} samples. Check if gradients were correctly computed (Step 2).")
+            
         embeds = torch.cat(all_embeds, dim=0)
 
         # Store or apply FIM

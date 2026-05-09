@@ -74,12 +74,15 @@ def load_dev_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
     logger.info(f"📂 Loading dev dataset: {dataset_name}")
 
     if dataset_name.lower() == "bbh":
-        # For BBH, we use the local JSONs if available, matching our eval pipeline
+        # Match Influence-Encoder (gradient_stocking.py) exactly
         eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval/bbh")
-        # We'll just load the json files directly from the eval_data_dir
-        raw_samples = []
         import glob
         task_files = glob.glob(os.path.join(eval_data_dir, "*.json"))
+        
+        if not task_files:
+             logger.warning(f"   ⚠️ WARNING: No BBH tasks found in {eval_data_dir}. Dataset will be empty!")
+        
+        raw_samples = []
         for task_file in task_files:
             with open(task_file, "r") as f:
                 data = json.load(f)
@@ -92,6 +95,7 @@ def load_dev_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
         from datasets import Dataset
         ds = Dataset.from_list(raw_samples)
     else:
+        # Same as LESS pipeline
         try:
             ds = load_dataset(dataset_name, split="test")
         except:
@@ -103,6 +107,10 @@ def load_dev_dataset(dataset_name, tokenizer, n_samples=None, end_index=None):
                 "labels": x.get("response", x.get("output", ""))
             }
         ds = ds.map(rename_keys)
+
+    if len(ds) == 0:
+        logger.error(f"❌ Error: Dataset '{dataset_name}' is empty. Check paths or environment variables (EVAL_DATA_DIR).")
+        exit(1)
 
     if end_index:
         ds = ds.select(range(min(end_index, len(ds))))
