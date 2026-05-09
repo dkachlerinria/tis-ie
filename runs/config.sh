@@ -7,7 +7,7 @@ export TRAINING_MODEL="Qwen/Qwen2.5-0.5B"
 export WARMUP_MODEL="${TRAINING_MODEL}"
 
 # Slug for file paths
-export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | tr '/' '_')
+export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
 export NUM_SAMPLES=100
 export END_INDEX=200
