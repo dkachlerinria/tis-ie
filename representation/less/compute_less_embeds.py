@@ -337,6 +337,7 @@ if __name__ == "__main__":
     # load model
     print(f"Loading model from checkpoint: {args.ckpt_path} at step {args.ckpt_step}")
     print("Note: this is a LoRA checkpoint.")
+    args.ckpt_path = os.path.abspath(args.ckpt_path)
     tokenizer = AutoTokenizer.from_pretrained(args.ckpt_path, use_fast=True)
     model = load_model(args.ckpt_path, tokenizer)
 
