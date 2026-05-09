@@ -12,6 +12,18 @@ LESS_DIR="$(pwd)/files/less/${MODEL_SLUG}"
 
 echo "Starting LESS Selection Pipeline..."
 
+# Resolve "latest" checkpoint if specified
+if [ "${CKPT_STEPS}" = "latest" ]; then
+    echo "Finding latest checkpoint in ${CKPT_DIR}..."
+    LATEST_CKPT=$(ls -d ${CKPT_DIR}/checkpoint-* 2>/dev/null | sort -V | tail -n 1)
+    if [ -z "${LATEST_CKPT}" ]; then
+        echo "Error: No checkpoints found in ${CKPT_DIR}. Did you run the warmup?"
+        exit 1
+    fi
+    CKPT_STEPS=$(basename ${LATEST_CKPT} | sed 's/checkpoint-//')
+    echo "Using latest checkpoint: checkpoint-${CKPT_STEPS}"
+fi
+
 # Step 1: Extract Gradients for all checkpoints
 echo "Step 1: Extracting gradients for all checkpoints..."
 for step in ${CKPT_STEPS}; do

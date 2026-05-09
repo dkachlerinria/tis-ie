@@ -20,7 +20,7 @@ export SELECTION_METHOD="doubly_greedy" # Default for embedding/less
 
 # LESS Specific Config
 export CKPT_DIR="$(pwd)/files/checkpoints/${MODEL_SLUG}_warmup"
-export CKPT_STEPS="50" # Steps for 500 samples, 1 epoch, grad_acc 10
+export CKPT_STEPS="latest" # Use "latest" to auto-detect, or space-separated steps (e.g. "50 100")
 export PROJ_DIM=512
 
 # Paths

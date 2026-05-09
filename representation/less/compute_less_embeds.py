@@ -262,6 +262,9 @@ def compute_eval_grads():
 def load_model(
     model_name_or_path: str, tokenizer: AutoTokenizer, torch_dtype: Any = torch.bfloat16
 ) -> Any:
+    if not os.path.exists(model_name_or_path):
+        raise FileNotFoundError(f"Model path not found: {model_name_or_path}")
+
     is_peft = os.path.exists(os.path.join(model_name_or_path, "adapter_config.json"))
     if is_peft:
         # load this way to make sure that optimizer states match the model structure
@@ -341,6 +344,9 @@ if __name__ == "__main__":
 
     os.makedirs(args.save_dir, exist_ok=True)
     # load model
+    if not os.path.exists(args.ckpt_path):
+        raise FileNotFoundError(f"Checkpoint path not found: {args.ckpt_path}. Did you run the warmup training?")
+
     print(f"Loading model from checkpoint: {args.ckpt_path} at step {args.ckpt_step}")
     print("Note: this is a LoRA checkpoint.")
     tokenizer = AutoTokenizer.from_pretrained(args.ckpt_path, use_fast=True)

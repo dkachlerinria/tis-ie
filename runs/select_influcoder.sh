@@ -28,12 +28,22 @@ fi
 # Shared warmup args for gradient_stocking.py to ensure consistency with SFT
 INFLUCODER_WARMUP_ARGS="--lr ${LR} --batch_size ${BATCH_SIZE} --grad_acc ${GRAD_ACC} --epochs ${WARMUP_EPOCHS} --lora_rank ${LORA_RANK} --lora_alpha ${LORA_ALPHA} --lora_dropout ${LORA_DROPOUT} --target_modules ${LORA_TARGET_MODULES}"
 
+echo "Starting Influcoder Selection Pipeline..."
+
+# Resolve "latest" checkpoint if specified
+if [ "${CKPT_STEPS}" = "latest" ]; then
+    echo "Finding latest checkpoint in ${CKPT_DIR}..."
+    LATEST_CKPT=$(ls -d ${CKPT_DIR}/checkpoint-* 2>/dev/null | sort -V | tail -n 1)
+    if [ -z "${LATEST_CKPT}" ]; then
+        echo "Error: No checkpoints found in ${CKPT_DIR}. Did you run the warmup?"
+        exit 1
+    fi
+    CKPT_STEPS=$(basename ${LATEST_CKPT} | sed 's/checkpoint-//')
+    echo "Using latest checkpoint: checkpoint-${CKPT_STEPS}"
+fi
+
 # Use the same warmup checkpoint as select_less
 LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
-
-export PYTHONPATH="$(pwd)/influcoder:${PYTHONPATH}"
-
-echo "Starting Influcoder Selection Pipeline..."
 echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
 mkdir -p "${INFLUCODER_DB_DIR}" "${INFLUCODER_EMBEDS_DIR}"
 

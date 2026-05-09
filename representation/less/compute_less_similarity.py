@@ -155,6 +155,9 @@ if __name__ == "__main__":
     trainer_state_path = os.path.join(
         args.ckpt_dir, f"checkpoint-{args.checkpoint_steps[-1]}", "trainer_state.json"
     )
+    if not os.path.exists(trainer_state_path):
+        raise FileNotFoundError(f"Trainer state not found at {trainer_state_path}. Make sure the checkpoint exists and contains trainer_state.json")
+
     with open(trainer_state_path, "r") as f:
         trainer_state = json.load(f)
 
