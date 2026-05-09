@@ -52,10 +52,15 @@ python3 -m training.train_sft \
     --num_train_epochs ${EPOCHS} \
     --learning_rate ${LR} \
     --seed ${SEED} \
+    --warmup_ratio ${WARMUP_RATIO} \
+    --lr_scheduler_type ${LR_SCHEDULER} \
+    --weight_decay ${WEIGHT_DECAY} \
+    --bf16 ${BF16} \
     --use_lora ${USE_LORA} \
     --lora_rank ${LORA_RANK} \
     --lora_alpha ${LORA_ALPHA} \
     --lora_dropout ${LORA_DROPOUT} \
+    --lora_target_modules ${LORA_TARGET_MODULES} \
     --save_strategy no \
     --report_to "none"
 

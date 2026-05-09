@@ -15,22 +15,24 @@ echo "Output Directory: ${CKPT_DIR}"
 python3 -m training.train_sft \
     --model_name "${WARMUP_MODEL}" \
     --train_dataset_name "${WARMUP_DATASET}" \
-    --num_samples 500 \
+    --num_samples "${WARMUP_SAMPLES}" \
     --output_dir "${CKPT_DIR}" \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 10 \
-    --num_train_epochs 1 \
-    --learning_rate 2e-5 \
-    --seed ${SEED} \
-    --warmup_ratio 0.03 \
-    --lr_scheduler_type linear \
-    --weight_decay 0.0 \
+    --per_device_train_batch_size "${BATCH_SIZE}" \
+    --gradient_accumulation_steps "${GRAD_ACC}" \
+    --num_train_epochs "${WARMUP_EPOCHS}" \
+    --learning_rate "${LR}" \
+    --seed "${SEED}" \
+    --warmup_ratio "${WARMUP_RATIO}" \
+    --lr_scheduler_type "${LR_SCHEDULER}" \
+    --weight_decay "${WEIGHT_DECAY}" \
+    --bf16 "${BF16}" \
     --save_strategy steps \
     --save_steps 10 \
     --logging_steps 1 \
-    --use_lora True \
-    --lora_r 128 \
-    --lora_alpha 512 \
-    --lora_dropout 0.1 \
+    --use_lora "${USE_LORA}" \
+    --lora_rank "${LORA_RANK}" \
+    --lora_alpha "${LORA_ALPHA}" \
+    --lora_dropout "${LORA_DROPOUT}" \
+    --lora_target_modules "${LORA_TARGET_MODULES}" \
     --report_to "none" \
     --overwrite_output_dir True

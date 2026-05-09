@@ -27,10 +27,6 @@ DEFAULT_SEEDS = [42, 137]
 GRAD_BATCH_SIZE = 4
 MAX_SEQ_LEN = 2048
 
-# Warmup parameters
-WARMUP_LR = 2e-5       # Aligned with paper's 2e-5
-WARMUP_EPOCHS = 2      # Aligned with paper's 2 epochs
-WARMUP_BATCH_SIZE = 4  # Aligned with paper's batch size of 32
 # ==================================================
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -511,13 +507,17 @@ def collate_fn(batch):
     return {"input_ids": input_ids, "labels": labels}
 
 
-def warmup_sft(model, tokenizer, pool_samples, n_warmup_samples: int, dataset_name: str, target_modules: list = None):
+def warmup_sft(model, tokenizer, pool_samples, n_warmup_samples: int, dataset_name: str, 
+               target_modules: list = None, lr=2e-5, batch_size=4, grad_acc=1, epochs=2, 
+               lora_rank=16, lora_alpha=32, lora_dropout=0.05):
     if target_modules is None:
         target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     print("\n" + "=" * 70)
     print("🔥 WARMUP STAGE: LoRA SFT -> Merge & Unload")
     print("=" * 70)
+    print(f"   Hyperparameters: lr={lr}, batch_size={batch_size}, grad_acc={grad_acc}, epochs={epochs}")
+    print(f"   LoRA: rank={lora_rank}, alpha={lora_alpha}, dropout={lora_dropout}")
 
     train_samples = pool_samples[:n_warmup_samples]
     if not train_samples:
@@ -527,10 +527,10 @@ def warmup_sft(model, tokenizer, pool_samples, n_warmup_samples: int, dataset_na
     print(f"   Using {len(train_samples)} samples for warmup")
 
     peft_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
+        r=lora_rank,
+        lora_alpha=lora_alpha,
         target_modules=target_modules,
-        lora_dropout=0.05,
+        lora_dropout=lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -540,17 +540,32 @@ def warmup_sft(model, tokenizer, pool_samples, n_warmup_samples: int, dataset_na
     dataset = WarmupDataset(train_samples, tokenizer, dataset_name)
     dataloader = DataLoader(
         dataset,
-        batch_size=WARMUP_BATCH_SIZE,
+        batch_size=batch_size,
         shuffle=True,
         collate_fn=collate_fn,
     )
-    optimizer = torch.optim.AdamW(model.parameters(), lr=WARMUP_LR)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    
+    # Linear scheduler: standard in SFT
+    total_steps = len(dataloader) * epochs
+    num_warmup_steps = int(0.03 * total_steps) # Consistent with WARMUP_RATIO
+    
+    def lr_lambda(current_step: int):
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        return max(
+            0.0, float(total_steps - current_step) / float(max(1, total_steps - num_warmup_steps))
+        )
+    
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     model.train()
-    for epoch in range(WARMUP_EPOCHS):
+    global_step = 0
+    for epoch in range(epochs):
         total_loss = 0
-        pbar = tqdm(dataloader, desc=f"Warmup Epoch {epoch+1}/{WARMUP_EPOCHS}")
-        for batch in pbar:
+        pbar = tqdm(dataloader, desc=f"Warmup Epoch {epoch+1}/{epochs}")
+        optimizer.zero_grad()
+        for i, batch in enumerate(pbar):
             if batch is None:
                 continue
 
@@ -559,18 +574,21 @@ def warmup_sft(model, tokenizer, pool_samples, n_warmup_samples: int, dataset_na
 
             with torch.amp.autocast(device_type=device, dtype=torch.bfloat16):
                 outputs = model(input_ids=input_ids, labels=labels)
-                loss = outputs.loss
+                loss = outputs.loss / grad_acc
 
             if torch.isnan(loss):
-                optimizer.zero_grad()
                 continue
 
-            optimizer.zero_grad()
             loss.backward()
-            optimizer.step()
+            
+            if (i + 1) % grad_acc == 0 or (i + 1) == len(dataloader):
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                global_step += 1
 
-            total_loss += loss.item()
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            total_loss += loss.item() * grad_acc
+            pbar.set_postfix({"loss": f"{loss.item() * grad_acc:.4f}", "lr": f"{scheduler.get_last_lr()[0]:.2e}"})
 
     print("\nMerging LoRA weights into Base Model...")
     model = model.merge_and_unload()
@@ -597,6 +615,12 @@ class GradientExtractor:
     def __init__(self, model, tokenizer, proj_dim, seeds, dataset_name, target_modules: list = None):
         if target_modules is None:
             target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        
+        # Support "all-linear" similar to train_sft.py
+        if (isinstance(target_modules, list) and len(target_modules) == 1 and target_modules[0] == "all-linear") or \
+           (isinstance(target_modules, str) and target_modules == "all-linear"):
+            target_modules = [name for name, module in model.named_modules() if isinstance(module, torch.nn.Linear)]
+            print(f"[Extractor] Detected 'all-linear', expanded to {len(target_modules)} modules")
 
         self.model = model
         self.tokenizer = tokenizer
@@ -834,6 +858,34 @@ def main():
         help="Module names to compute gradients for (default: LoRA target modules)"
     )
     parser.add_argument(
+        "--lr", type=float, default=2e-5,
+        help="Learning rate for warmup SFT"
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=4,
+        help="Batch size for warmup SFT"
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=2,
+        help="Number of epochs for warmup SFT"
+    )
+    parser.add_argument(
+        "--grad_acc", type=int, default=1,
+        help="Gradient accumulation steps for warmup SFT"
+    )
+    parser.add_argument(
+        "--lora_rank", type=int, default=16,
+        help="LoRA rank for warmup SFT"
+    )
+    parser.add_argument(
+        "--lora_alpha", type=int, default=32,
+        help="LoRA alpha for warmup SFT"
+    )
+    parser.add_argument(
+        "--lora_dropout", type=float, default=0.05,
+        help="LoRA dropout for warmup SFT"
+    )
+    parser.add_argument(
         "--force_recompute", action="store_true",
         help="If set, deletes existing database files and re-extracts all gradients. "
              "Default: False (resumes from existing DB)."
@@ -940,7 +992,11 @@ def main():
         )
 
         # Run the warmup phase
-        model = warmup_sft(model, tokenizer, warmup_samples, actual_n_warmup, args.dataset, args.target_modules)
+        model = warmup_sft(
+            model, tokenizer, warmup_samples, actual_n_warmup, args.dataset, args.target_modules,
+            lr=args.lr, batch_size=args.batch_size, grad_acc=args.grad_acc, epochs=args.epochs,
+            lora_rank=args.lora_rank, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout
+        )
         
         if args.save_warmup_path:
             os.makedirs(args.save_warmup_path, exist_ok=True)

@@ -25,6 +25,9 @@ if [ "$FORCE_RECOMPUTE" = true ]; then
     RECOMPUTE_FLAG="--force_recompute"
 fi
 
+# Shared warmup args for gradient_stocking.py to ensure consistency with SFT
+INFLUCODER_WARMUP_ARGS="--lr ${LR} --batch_size ${BATCH_SIZE} --grad_acc ${GRAD_ACC} --epochs ${WARMUP_EPOCHS} --lora_rank ${LORA_RANK} --lora_alpha ${LORA_ALPHA} --lora_dropout ${LORA_DROPOUT} --target_modules ${LORA_TARGET_MODULES}"
+
 # Use the same warmup checkpoint as select_less
 LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
 
@@ -47,6 +50,7 @@ python influcoder/gradient_stocking.py \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
+    ${INFLUCODER_WARMUP_ARGS} \
     --output_name "${INFLUCODER_DB_DIR}/train_anchors"
 
 # Step 1b: Stock eval_anchors
@@ -62,6 +66,7 @@ python influcoder/gradient_stocking.py \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
+    ${INFLUCODER_WARMUP_ARGS} \
     --output_name "${INFLUCODER_DB_DIR}/eval_anchors"
 
 # Step 1c: Stock pool
@@ -77,6 +82,7 @@ python influcoder/gradient_stocking.py \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
+    ${INFLUCODER_WARMUP_ARGS} \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
 # Step 1d: Stock eval_pool
@@ -92,6 +98,7 @@ python influcoder/gradient_stocking.py \
     --pool_size "${N_POOL_SAMPLES}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
     ${RECOMPUTE_FLAG} \
+    ${INFLUCODER_WARMUP_ARGS} \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
 
 # Step 2: Train the influence encoder
@@ -141,10 +148,15 @@ python3 -m training.train_sft \
     --num_train_epochs ${EPOCHS} \
     --learning_rate ${LR} \
     --seed ${SEED} \
+    --warmup_ratio ${WARMUP_RATIO} \
+    --lr_scheduler_type ${LR_SCHEDULER} \
+    --weight_decay ${WEIGHT_DECAY} \
+    --bf16 ${BF16} \
     --use_lora ${USE_LORA} \
     --lora_rank ${LORA_RANK} \
     --lora_alpha ${LORA_ALPHA} \
     --lora_dropout ${LORA_DROPOUT} \
+    --lora_target_modules ${LORA_TARGET_MODULES} \
     --save_strategy no \
     --report_to "none"
 

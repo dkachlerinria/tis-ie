@@ -9,8 +9,8 @@ export WARMUP_MODEL="${TRAINING_MODEL}"
 # Slug for file paths
 export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
-export NUM_SAMPLES=100
-export END_INDEX=200
+export NUM_SAMPLES=1000
+export END_INDEX=20000
 export SEED=42
 
 # Selection Config
@@ -34,9 +34,18 @@ export BATCH_SIZE=1
 export GRAD_ACC=128
 export EPOCHS=2
 export LR=2e-5
+export WARMUP_RATIO=0.03
+export WEIGHT_DECAY=0.0
+export LR_SCHEDULER="linear"
+export BF16=True
+
+# Warmup specific (only samples and epochs should differ)
+export WARMUP_SAMPLES=500
+export WARMUP_EPOCHS=1
 
 # LoRA Config
 export USE_LORA=True
 export LORA_RANK=16
 export LORA_ALPHA=32
 export LORA_DROPOUT=0.05
+export LORA_TARGET_MODULES="all-linear"

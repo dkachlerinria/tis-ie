@@ -75,6 +75,9 @@ class TrainingConfig:
     use_flash_attention_2: Optional[bool] = field(
         default=False, metadata={"help": "Whether to use Flash Attention 2."}
     )
+    lora_target_modules: Optional[str] = field(
+        default=None, metadata={"help": "The target modules for LoRA."}
+    )
 
 
 def train():
@@ -117,7 +120,11 @@ def train():
         model.resize_token_embeddings(len(tokenizer))
 
     if train_cfg.use_lora:
-        if "llama" in train_cfg.model_name.lower():
+        if train_cfg.lora_target_modules:
+            target_modules = train_cfg.lora_target_modules.split(",")
+            if len(target_modules) == 1 and target_modules[0] == "all-linear":
+                target_modules = "all-linear"
+        elif "llama" in train_cfg.model_name.lower():
             target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
         else:
             target_modules = "all-linear"
