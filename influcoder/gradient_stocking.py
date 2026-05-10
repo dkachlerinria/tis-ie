@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_MODEL = "Qwen/Qwen3-0.6B-Base"
 DEFAULT_PROJ_DIM = 131072
 DEFAULT_SEEDS = [42, 137]
-GRAD_BATCH_SIZE = 4
+GRAD_BATCH_SIZE = 1  # Reduced for memory efficiency during gradient extraction
 MAX_SEQ_LEN = 2048
 
 # ==================================================

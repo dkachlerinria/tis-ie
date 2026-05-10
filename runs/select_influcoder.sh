@@ -11,7 +11,7 @@ RESULTS_DIR="${RESULTS_ROOT}/trained_model_${METHOD}_${BENCHMARK}_top${NUM_SAMPL
 
 # --- Influcoder-specific config ---
 INFLUCODER_RUN_MODE="small"
-INFLUCODER_PROJ_DIM=131072
+INFLUCODER_PROJ_DIM=8192  # Reduced from 131072 to fit in 24GB GPU memory
 
 # Data Partitioning (anchors from BBH, pool from tulu)
 N_TRAIN_ANCHORS=100      # From BENCHMARK dataset (BBH) - random samples
