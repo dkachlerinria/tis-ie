@@ -3,7 +3,7 @@
 
 # General Config
 export BENCHMARK="bbh"
-export TRAINING_MODEL="Qwen/Qwen3-1.7B-Base"
+export TRAINING_MODEL="Qwen/Qwen3-4B"
 export WARMUP_MODEL="${TRAINING_MODEL}"
 
 # Slug for file paths
