@@ -3,25 +3,25 @@
 
 # General Config
 export BENCHMARK="bbh"
-export TRAINING_MODEL="Qwen/Qwen3-4B"
+export TRAINING_MODEL="meta-llama/Llama-2-7b-hf"
 export WARMUP_MODEL="${TRAINING_MODEL}"
 
 # Slug for file paths
 export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
-export NUM_SAMPLES=1000
-export END_INDEX=20000
-export SEED=42
+export NUM_SAMPLES=2500
+export END_INDEX=10000
+export SEED=0
 
 # Selection Config
 export ENCODER_MODEL="jhu-clsp/ettin-encoder-150m"
 export TRAIN_DATASET="Harvard-DCML/tulu-v2-197K-processed"
-export SELECTION_METHOD="doubly_greedy" # Default for embedding/less
+export SELECTION_METHOD="round_robin"
 
 # LESS Specific Config
 export CKPT_DIR="$(pwd)/files/checkpoints/${MODEL_SLUG}_warmup"
 export CKPT_STEPS="latest" # Use "latest" to auto-detect, or space-separated steps (e.g. "50 100")
-export PROJ_DIM=512
+export PROJ_DIM=8192
 
 # Paths
 export INDEX_DIR="$(pwd)/files/index/${MODEL_SLUG}_ettin_subset_${END_INDEX}"
@@ -40,12 +40,12 @@ export LR_SCHEDULER="linear"
 export BF16=True
 
 # Warmup specific (only samples and epochs should differ)
-export WARMUP_SAMPLES=500
+export WARMUP_SAMPLES=5000
 export WARMUP_EPOCHS=1
 
 # LoRA Config
 export USE_LORA=True
-export LORA_RANK=16
-export LORA_ALPHA=32
-export LORA_DROPOUT=0.05
+export LORA_RANK=128
+export LORA_ALPHA=512
+export LORA_DROPOUT=0.1
 export LORA_TARGET_MODULES="all-linear"

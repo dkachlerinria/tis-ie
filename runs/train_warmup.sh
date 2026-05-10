@@ -26,8 +26,7 @@ python3 -m training.train_sft \
     --lr_scheduler_type "${LR_SCHEDULER}" \
     --weight_decay "${WEIGHT_DECAY}" \
     --bf16 "${BF16}" \
-    --save_strategy steps \
-    --save_steps 10 \
+    --save_strategy epoch \
     --logging_steps 1 \
     --use_lora "${USE_LORA}" \
     --lora_rank "${LORA_RANK}" \

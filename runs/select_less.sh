@@ -29,17 +29,30 @@ if [ "${CKPT_STEPS}" = "latest" ]; then
 fi
 
 # Step 1: Extract Gradients for all checkpoints
+# Train grads use adam (EMA-corrected with warmup optimizer state).
+# Dev/query grads use sgd (raw gradients, no optimizer state).
+# These must be separate calls so the files are named correctly for compute_less_similarity.
 echo "Step 1: Extracting gradients for all checkpoints..."
 for step in ${CKPT_STEPS}; do
-    echo "Processing checkpoint-${step}..."
+    echo "Processing checkpoint-${step} — train gradients (adam)..."
+    python3 -m representation.less.compute_less_embeds \
+        --ckpt_path "${CKPT_DIR}/checkpoint-${step}" \
+        --ckpt_step "${step}" \
+        --save_dir "${LESS_DIR}" \
+        --compute_train_grads \
+        --gradient_type adam \
+        --end_index "${END_INDEX}" \
+        --proj_dim "${PROJ_DIM}" \
+        --project_interval "${PROJECT_INTERVAL}"
+
+    echo "Processing checkpoint-${step} — dev/query gradients (sgd)..."
     python3 -m representation.less.compute_less_embeds \
         --ckpt_path "${CKPT_DIR}/checkpoint-${step}" \
         --ckpt_step "${step}" \
         --dev_dataset_name "${BENCHMARK}" \
         --save_dir "${LESS_DIR}" \
-        --compute_train_grads \
         --compute_dev_grads \
-        --end_index "${END_INDEX}" \
+        --gradient_type sgd \
         --proj_dim "${PROJ_DIM}" \
         --project_interval "${PROJECT_INTERVAL}"
 done
