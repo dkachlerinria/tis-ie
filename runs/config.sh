@@ -8,7 +8,7 @@ fi
 
 # General Config
 export BENCHMARK="bbh"
-export TRAINING_MODEL="meta-llama/Llama-2-7b-hf"
+export TRAINING_MODEL="Qwen/Qwen3-4B"
 export WARMUP_MODEL="${TRAINING_MODEL}"
 
 # Slug for file paths
