@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#OAR -q production 
+#OAR -q besteffort
 #OAR -l host=1/gpu=1,walltime=3:00:00
 #OAR -p gpu-16GB AND gpu_compute_capability_major>=7
 #OAR -O OAR_%jobid%.out
