@@ -1,6 +1,11 @@
 #!/bin/bash
 # Shared configuration for all selection methods
 
+# Load local configuration if it exists (for tokens, etc.)
+if [ -f "$(dirname "$0")/config_local.sh" ]; then
+    source "$(dirname "$0")/config_local.sh"
+fi
+
 # General Config
 export BENCHMARK="bbh"
 export TRAINING_MODEL="meta-llama/Llama-2-7b-hf"
