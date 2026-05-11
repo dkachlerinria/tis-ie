@@ -293,9 +293,15 @@ def load_model(
         if len(tokenizer) != embedding_size:
             model.resize_token_embeddings(len(tokenizer))
 
+    model.requires_grad_(False)
     for name, param in model.named_parameters():
         if "lora" in name or "Lora" in name:
             param.requires_grad = True
+    
+    # Debug info
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"DEBUG: Total trainable parameters: {trainable_params:,}")
+    
     return model
 
 
