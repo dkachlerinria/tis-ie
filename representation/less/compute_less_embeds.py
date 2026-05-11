@@ -115,16 +115,14 @@ def obtain_gradients_with_adam(model, batch, avg, avg_sq):
     vectorized_grads = torch.cat(
         [p.grad.view(-1) for n, p in model.named_parameters() if p.grad is not None]
     )
-    # Free .grad tensors now; they've been copied into vectorized_grads.
-    model.zero_grad()
 
     updated_avg = beta1 * avg + (1 - beta1) * vectorized_grads
     updated_avg_sq = beta2 * avg_sq + (1 - beta2) * vectorized_grads**2
     del vectorized_grads
-    result = updated_avg / torch.sqrt(updated_avg_sq + eps)
+    vectorized_grads = updated_avg / torch.sqrt(updated_avg_sq + eps)
     del updated_avg, updated_avg_sq
 
-    return result
+    return vectorized_grads
 
 
 def prepare_optimizer_state(model, optimizer_state, device):
@@ -148,7 +146,7 @@ def collect_grads(
     proj_dim: int = 8192,
     adam_optimizer_state: Optional[dict] = None,
     gradient_type: str = "adam",
-    project_interval: int = 1,
+    project_interval: int = 8,
 ):
     """
     Collects gradients from the model during evaluation and saves them to disk.
@@ -293,15 +291,14 @@ def load_model(
         if len(tokenizer) != embedding_size:
             model.resize_token_embeddings(len(tokenizer))
 
-    model.requires_grad_(False)
     for name, param in model.named_parameters():
         if "lora" in name or "Lora" in name:
             param.requires_grad = True
-    
+
     # Debug info
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"DEBUG: Total trainable parameters: {trainable_params:,}")
-    
+
     return model
 
 
