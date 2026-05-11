@@ -26,7 +26,7 @@ export SELECTION_METHOD="round_robin"
 # LESS Specific Config
 export CKPT_DIR="$(pwd)/files/checkpoints/${MODEL_SLUG}_warmup"
 export CKPT_STEPS="latest" # Use "latest" to auto-detect, or space-separated steps (e.g. "50 100")
-export PROJ_DIM=8192
+export PROJ_DIM=512
 
 # Paths
 export INDEX_DIR="$(pwd)/files/index/${MODEL_SLUG}_ettin_subset_${END_INDEX}"
