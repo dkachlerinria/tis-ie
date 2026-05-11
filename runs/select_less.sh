@@ -12,7 +12,7 @@ LESS_DIR="$(pwd)/files/less/${MODEL_SLUG}"
 
 # Performance Tuning (A30 optimized)
 PROJ_DIM=8192
-PROJECT_INTERVAL=16
+PROJECT_INTERVAL=1
 
 echo "Starting LESS Selection Pipeline..."
 
