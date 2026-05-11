@@ -97,18 +97,9 @@ def obtain_gradients(model, batch):
     """obtain gradients."""
     loss = model(**batch).loss
     loss.backward()
-    
-    # Use a more robust way to collect gradients, ensuring we match the order of trainable params
-    grads = []
-    for p in model.parameters():
-        if p.requires_grad:
-            if p.grad is not None:
-                grads.append(p.grad.view(-1))
-            else:
-                # If a parameter didn't get a gradient, use zeros
-                grads.append(torch.zeros_like(p).view(-1))
-    
-    vectorized_grads = torch.cat(grads)
+    vectorized_grads = torch.cat(
+        [p.grad.view(-1) for p in model.parameters() if p.grad is not None]
+    )
     return vectorized_grads
 
 
@@ -121,30 +112,18 @@ def obtain_gradients_with_adam(model, batch, avg, avg_sq):
     loss = model(**batch).loss
     loss.backward()
 
-    # Use a more robust way to collect gradients
-    grads = []
-    for p in model.parameters():
-        if p.requires_grad:
-            if p.grad is not None:
-                grads.append(p.grad.view(-1))
-            else:
-                grads.append(torch.zeros_like(p).view(-1))
-    
-    vectorized_grads = torch.cat(grads)
+    vectorized_grads = torch.cat(
+        [p.grad.view(-1) for n, p in model.named_parameters() if p.grad is not None]
+    )
     # Free .grad tensors now; they've been copied into vectorized_grads.
-    model.zero_grad(set_to_none=True)
+    model.zero_grad()
 
-    # Memory-efficient EMA calculation using in-place ops
-    # result = (beta1 * avg + (1-beta1) * g) / sqrt(beta2 * avg_sq + (1-beta2) * g^2 + eps)
-    
-    # We need to keep g for both calculations, but we can reuse vectorized_grads
-    g = vectorized_grads 
-    m_new = g.clone().mul_(1 - beta1).add_(avg, alpha=beta1)
-    v_new = g.pow_(2).mul_(1 - beta2).add_(avg_sq, alpha=beta2)
-    
-    result = m_new.div_(torch.sqrt(v_new.add_(eps)))
-    del m_new, v_new, g
-    
+    updated_avg = beta1 * avg + (1 - beta1) * vectorized_grads
+    updated_avg_sq = beta2 * avg_sq + (1 - beta2) * vectorized_grads**2
+    del vectorized_grads
+    result = updated_avg / torch.sqrt(updated_avg_sq + eps)
+    del updated_avg, updated_avg_sq
+
     return result
 
 
@@ -213,14 +192,8 @@ def collect_grads(
     )
 
     def _project(current_full_grads):
-        # current_full_grads is a list of CPU tensors.
-        # Stack on CPU to avoid GPU memory spike.
-        stacked_grads = torch.stack(current_full_grads)
-        # Cast to the projector's expected dtype on CPU.
-        stacked_grads = stacked_grads.to(dtype)
-        # Move to device and project. 
-        # By stacking and casting first, we only move the necessary 2-byte/param data to GPU.
-        current_projected_grads = proj.project(stacked_grads.to(device), model_id=model_id)
+        current_full_grads = torch.stack(current_full_grads).to(torch.float16)
+        current_projected_grads = proj.project(current_full_grads, model_id=model_id)
         return current_projected_grads.cpu()
 
     # projected_gradients
@@ -228,10 +201,6 @@ def collect_grads(
     projected_grads = []
     model.train()
     count = 0
-    
-    # Pre-clear cache
-    torch.cuda.empty_cache()
-    
     for batch in tqdm(dataloader, total=len(dataloader)):
         count += 1
         prepare_batch(batch, device=device)
@@ -239,18 +208,14 @@ def collect_grads(
         if gradient_type == "adam":
             vectorized_grads = obtain_gradients_with_adam(model, batch, m, v)
         elif gradient_type == "sign":
-            # Fallback for sign gradients if needed (not currently used)
-            loss = model(**batch).loss
-            loss.backward()
-            vectorized_grads = torch.cat([p.grad.sign().view(-1) for p in model.parameters() if p.requires_grad])
+            vectorized_grads = obtain_sign_gradients(model, batch)
         else:
             vectorized_grads = obtain_gradients(model, batch)
 
-        # Move the gradients to CPU immediately to save GPU memory.
-        # This is the key to preventing OOM with large models.
-        full_grads.append(vectorized_grads.cpu())
-        del vectorized_grads 
-        model.zero_grad(set_to_none=True)
+        # add the gradients to the full_grads
+        full_grads.append(vectorized_grads)
+        del vectorized_grads  # drop outer reference; full_grads is the only holder now
+        model.zero_grad()
 
         # project
         if count % project_interval == 0:
