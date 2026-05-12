@@ -16,8 +16,8 @@ export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 
 
 #export NUM_SAMPLES=2500
 #export END_INDEX=10000
-export NUM_SAMPLES=50
-export END_INDEX=200
+export NUM_SAMPLES=5
+export END_INDEX=20
 
 export SEED=0
 
