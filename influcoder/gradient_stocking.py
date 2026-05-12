@@ -21,6 +21,12 @@ from peft import LoraConfig, get_peft_model, PeftConfig, PeftModel
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
 
+# Make influence_eval importable when running gradient_stocking.py directly
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from influence_eval.flops_measure import flop_counter, add_phase_flops
+
 # Add parent directory to path so we can import common, representation, etc.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -942,11 +948,35 @@ def main():
     batch_data = []
     pbar = tqdm(total=len(to_process), desc="Stocking to SQLite")
 
-    for item in to_process:
-        batch_data.append(item)
-        if len(batch_data) >= GRAD_BATCH_SIZE:
-            seed_grads = extractor.get_projected_gradients(batch_data)
+    with flop_counter() as counter:
+        for item in to_process:
+            batch_data.append(item)
+            if len(batch_data) >= GRAD_BATCH_SIZE:
+                seed_grads = extractor.get_projected_gradients(batch_data)
 
+                doc_rows = []
+                for d in batch_data:
+                    p_text, r_text = render_for_storage(d, args.dataset, tokenizer, MAX_SEQ_LEN)
+                    doc_rows.append((d["doc_id"], p_text, r_text))
+                cur.executemany(
+                    "INSERT OR REPLACE INTO documents VALUES (?, ?, ?)", doc_rows
+                )
+                proj_rows = []
+                for seed in args.seeds:
+                    for i, d in enumerate(batch_data):
+                        proj_rows.append(
+                            (d["doc_id"], seed, seed_grads[seed][i].tobytes())
+                        )
+                cur.executemany(
+                    "INSERT OR REPLACE INTO projections VALUES (?, ?, ?)", proj_rows
+                )
+                conn.commit()
+
+                pbar.update(len(batch_data))
+                batch_data.clear()
+
+        if batch_data:
+            seed_grads = extractor.get_projected_gradients(batch_data)
             doc_rows = []
             for d in batch_data:
                 p_text, r_text = render_for_storage(d, args.dataset, tokenizer, MAX_SEQ_LEN)
@@ -954,39 +984,21 @@ def main():
             cur.executemany(
                 "INSERT OR REPLACE INTO documents VALUES (?, ?, ?)", doc_rows
             )
-            proj_rows = []
-            for seed in args.seeds:
-                for i, d in enumerate(batch_data):
-                    proj_rows.append(
-                        (d["doc_id"], seed, seed_grads[seed][i].tobytes())
-                    )
+            proj_rows = [
+                (d["doc_id"], seed, seed_grads[seed][i].tobytes())
+                for seed in args.seeds
+                for i, d in enumerate(batch_data)
+            ]
             cur.executemany(
                 "INSERT OR REPLACE INTO projections VALUES (?, ?, ?)", proj_rows
             )
             conn.commit()
-
             pbar.update(len(batch_data))
-            batch_data.clear()
 
-    if batch_data:
-        seed_grads = extractor.get_projected_gradients(batch_data)
-        doc_rows = []
-        for d in batch_data:
-            p_text, r_text = render_for_storage(d, args.dataset, tokenizer, MAX_SEQ_LEN)
-            doc_rows.append((d["doc_id"], p_text, r_text))
-        cur.executemany(
-            "INSERT OR REPLACE INTO documents VALUES (?, ?, ?)", doc_rows
-        )
-        proj_rows = [
-            (d["doc_id"], seed, seed_grads[seed][i].tobytes())
-            for seed in args.seeds
-            for i, d in enumerate(batch_data)
-        ]
-        cur.executemany(
-            "INSERT OR REPLACE INTO projections VALUES (?, ?, ?)", proj_rows
-        )
-        conn.commit()
-        pbar.update(len(batch_data))
+    split_flops = int(counter.get_total_flops())
+    flops_path = os.path.join(os.path.dirname(db_path), "_flops.json")
+    total_flops = add_phase_flops(flops_path, split_flops)
+    print(f"   📊 FLOPs this split: {split_flops:.3e} | cumulative: {total_flops:.3e}")
 
     pbar.close()
     conn.close()

@@ -7,6 +7,7 @@ Trains an encoder on pre-stocked gradients and evaluates on:
 
 import os
 import sqlite3
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,6 +19,12 @@ import warnings
 import logging
 import math
 import json
+
+# Make influence_eval importable
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from influence_eval.flops_measure import flop_counter, save_phase_flops
 from typing import List, Dict, Sequence
 from collections import deque
 from tqdm import tqdm
@@ -473,6 +480,8 @@ if __name__ == "__main__":
     train_loss_avg = RunningAverage()
     global_batch_idx = 0
 
+    flop_ctx = flop_counter()
+    counter = flop_ctx.__enter__()
     for epoch in range(epochs):
         gen = AnchorBatchGenerator(train_anchors_text, train_text, true_scores_train,
                                    args.batch_size, args.n_candidates_per_batch,
@@ -523,13 +532,19 @@ if __name__ == "__main__":
         z_a = enc.encode(eval_anchors_text, normalize_embeddings=True, convert_to_numpy=True, batch_size=32)
         z_e = enc.encode(eval_text, normalize_embeddings=True, convert_to_numpy=True, batch_size=32)
         inf_metrics = compute_native_metrics(true_scores_eval, z_a @ z_e.T, agg_mode=args.agg_mode)
-        
+
         # Baseline
         base_enc = SentenceTransformer(args.encoder_model, device=device)
         base_enc.max_seq_length = enc.max_seq_length
         zb_a = base_enc.encode(eval_anchors_text, normalize_embeddings=True, convert_to_numpy=True, batch_size=32)
         zb_e = base_enc.encode(eval_text, normalize_embeddings=True, convert_to_numpy=True, batch_size=32)
         base_metrics = compute_native_metrics(true_scores_eval, zb_a @ zb_e.T, agg_mode=args.agg_mode)
+
+    training_flops = int(counter.get_total_flops())
+    flop_ctx.__exit__(None, None, None)
+    flops_path = os.path.join(args.output_dir, "_flops.json")
+    save_phase_flops(flops_path, training_flops)
+    print(f"   📊 Training FLOPs: {training_flops:.3e}  ({flops_path})")
 
     tbl = [
         ["Semantic Baseline", f"{base_metrics['agg_spearman']:.4f}", f"{base_metrics['per_anchor_spearman_mean']:.4f}"],

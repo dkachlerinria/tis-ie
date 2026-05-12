@@ -14,4 +14,6 @@ python3 -m influence_eval.compute_influcoder_scores \
     --dev_dataset_name "${BENCHMARK}" \
     --n_stock_anchors "$((INFLUCODER_N_TRAIN_A + INFLUCODER_N_EVAL_A))" \
     --n_stock_pool    "$((INFLUCODER_N_TRAIN_P + INFLUCODER_N_EVAL_P))" \
-    --proj_dim        "${INFLUCODER_PROJ_DIM}"
+    --proj_dim        "${INFLUCODER_PROJ_DIM}" \
+    --stocking_flops_path "${INFLUCODER_DB_DIR}/_flops.json" \
+    --training_flops_path "${INFLUCODER_ENCODER_DIR}/_flops.json"

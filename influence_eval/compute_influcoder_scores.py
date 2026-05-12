@@ -14,6 +14,7 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForCausalLM
 
 from influence_eval.bbh_data import bbh_texts_for_encoder
+from influence_eval.flops_measure import flop_counter, load_phase_flops
 from influence_eval.model_utils import count_params
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
@@ -47,6 +48,8 @@ def compute_influcoder_scores(
     n_stock_anchors: int,
     n_stock_pool: int,
     proj_dim: int,
+    stocking_flops_path: str,
+    training_flops_path: str,
     batch_size: int = 32,
     out_name: str = "influcoder",
 ) -> None:
@@ -58,39 +61,48 @@ def compute_influcoder_scores(
         model.to("cuda")
     tokenizer = model.tokenizer
 
-    train_embeds = compute_train_embeddings(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset_path=None,
-        batch_size=batch_size,
-        start_index=0,
-        end_index=end_index,
-        debug=False,
-    )
-
-    # Anchor embeddings from local BBH [0:num_anchors] (same slice as ground truth)
     anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
-    anchor_embeds = torch.from_numpy(
-        model.encode(
-            anchor_texts,
-            batch_size=batch_size,
-            show_progress_bar=True,
-            convert_to_numpy=True,
-            normalize_embeddings=False,
-        )
-    )
-    logger.info(
-        "Train embeds: %s, anchor embeds: %s",
-        tuple(train_embeds.shape),
-        tuple(anchor_embeds.shape),
-    )
 
-    scores = batch_cosine_similarity(
-        dev_reps=anchor_embeds,
-        train_reps=train_embeds,
-        chunk_size=1024,
-        normalize=False,
-    ).float()
+    with flop_counter() as counter:
+        train_embeds = compute_train_embeddings(
+            model=model,
+            tokenizer=tokenizer,
+            train_dataset_path=None,
+            batch_size=batch_size,
+            start_index=0,
+            end_index=end_index,
+            debug=False,
+        )
+        anchor_embeds = torch.from_numpy(
+            model.encode(
+                anchor_texts,
+                batch_size=batch_size,
+                show_progress_bar=True,
+                convert_to_numpy=True,
+                normalize_embeddings=False,
+            )
+        )
+        scores = batch_cosine_similarity(
+            dev_reps=anchor_embeds,
+            train_reps=train_embeds,
+            chunk_size=1024,
+            normalize=False,
+        ).float()
+    inference_flops = int(counter.get_total_flops())
+
+    stocking_flops = load_phase_flops(stocking_flops_path)
+    training_flops = load_phase_flops(training_flops_path)
+    total_flops = stocking_flops + training_flops + inference_flops
+    logger.info(
+        "FLOPs — stocking=%.3e, training=%.3e, inference=%.3e, total=%.3e",
+        stocking_flops, training_flops, inference_flops, total_flops,
+    )
+    if stocking_flops == 0:
+        logger.warning("No stocking FLOPs at %s — was gradient_stocking re-run after instrumentation?",
+                       stocking_flops_path)
+    if training_flops == 0:
+        logger.warning("No training FLOPs at %s — was train_influence_encoder re-run after instrumentation?",
+                       training_flops_path)
 
     out_path = os.path.join(save_dir, f"{out_name}_scores.pt")
     torch.save(scores, out_path)
@@ -109,6 +121,10 @@ def compute_influcoder_scores(
         "n_stock_anchors": int(n_stock_anchors),
         "n_stock_pool": int(n_stock_pool),
         "proj_dim": int(proj_dim),
+        "stocking_flops": int(stocking_flops),
+        "training_flops": int(training_flops),
+        "inference_flops": int(inference_flops),
+        "measured_flops": int(total_flops),
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
     logger.info("Saved params for FLOPS accounting")
@@ -129,6 +145,10 @@ def parse_args():
                    help="N_TRAIN_P + N_EVAL_P (for FLOPS).")
     p.add_argument("--proj_dim", type=int, required=True,
                    help="INFLUCODER_PROJ_DIM (for FLOPS).")
+    p.add_argument("--stocking_flops_path", required=True, type=str,
+                   help="${INFLUCODER_DB_DIR}/_flops.json — written by gradient_stocking.py.")
+    p.add_argument("--training_flops_path", required=True, type=str,
+                   help="${INFLUCODER_ENCODER_DIR}/_flops.json — written by train_influence_encoder.py.")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--out_name", type=str, default="influcoder")
     return p.parse_args()
@@ -150,6 +170,8 @@ def main():
         n_stock_anchors=args.n_stock_anchors,
         n_stock_pool=args.n_stock_pool,
         proj_dim=args.proj_dim,
+        stocking_flops_path=args.stocking_flops_path,
+        training_flops_path=args.training_flops_path,
         batch_size=args.batch_size,
         out_name=args.out_name,
     )
