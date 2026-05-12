@@ -18,7 +18,7 @@ export RUN_ID="${MODEL_SLUG}_tiny_anchors${NUM_ANCHORS}_train${END_INDEX}"
 export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
 
 # Tiny influcoder overrides
-export INFLUCODER_RUN_MODE="tiny"
+export INFLUCODER_RUN_MODE="small"
 export INFLUCODER_N_TRAIN_A=2000
 export INFLUCODER_N_EVAL_A=50
 export INFLUCODER_N_TRAIN_P=4000

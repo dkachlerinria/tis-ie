@@ -6,3 +6,4 @@ oarsub -l gpu=1 -I -p gruss
 
 
 bash runs/influence_spearman/stock_influcoder_gradients.sh runs/influence_spearman/config_influence_tiny.sh
+
