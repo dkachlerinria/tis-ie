@@ -19,9 +19,9 @@ export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
 
 # Tiny influcoder overrides
 export INFLUCODER_RUN_MODE="tiny"
-export INFLUCODER_N_TRAIN_A=1000
+export INFLUCODER_N_TRAIN_A=2000
 export INFLUCODER_N_EVAL_A=50
-export INFLUCODER_N_TRAIN_P=2000
+export INFLUCODER_N_TRAIN_P=4000
 export INFLUCODER_N_EVAL_P=100
 
 export INFLUCODER_DB_DIR="${INFLUENCE_OUT}/influcoder_db"
