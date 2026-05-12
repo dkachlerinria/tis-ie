@@ -5,9 +5,8 @@
 
 source runs/config.sh
 
-# Model for influence calculations (can differ from TRAINING_MODEL for SFT).
-# Defaults to TRAINING_MODEL for backward compat; override to validate on smaller model.
-export INFLUENCE_MODEL="${INFLUENCE_MODEL:-${TRAINING_MODEL}}"
+# Model for influence calculations
+export INFLUENCE_MODEL="Qwen/Qwen3-0.6B"
 INFLUENCE_MODEL_SLUG=$(echo "${INFLUENCE_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
 # Anchor count (BBH dev split sliced [0:NUM_ANCHORS])
