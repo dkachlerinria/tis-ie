@@ -627,20 +627,23 @@ if __name__ == "__main__":
     # =====================================================================
     logger.info("🔗 Getting target-proxy layer pairs...")
     
+    # IPSVD wraps the original Linear so the LinearSVD lives at "<name>.base_layer".
+    # We pair the target's Linear with the proxy's nested LinearSVD.
     layer_pairs = []
     proxy_dict = dict(proxy_model.named_modules())
-    
+
     for name, t_mod in target_model.named_modules():
-        if any(name.endswith(tm) for tm in args.target_modules):
-            if name in proxy_dict:
-                p_mod = proxy_dict[name]
-                # Check if it was successfully converted to LinearSVD
-                if hasattr(p_mod, "linear_A") and hasattr(p_mod, "linear_B"):
-                    layer_pairs.append((t_mod, p_mod))
-                else:
-                    logger.warning(f"Layer {name} is not a LinearSVD in proxy (likely skipped).")
-            else:
-                logger.warning(f"Layer {name} not found in proxy model.")
+        if not any(name.endswith(tm) for tm in args.target_modules):
+            continue
+        matched = False
+        for proxy_path in (name, f"{name}.base_layer"):
+            cand = proxy_dict.get(proxy_path)
+            if cand is not None and hasattr(cand, "linear_A") and hasattr(cand, "linear_B"):
+                layer_pairs.append((t_mod, cand))
+                matched = True
+                break
+        if not matched:
+            logger.warning(f"Layer {name}: no LinearSVD found in proxy (skipped).")
 
     if not layer_pairs:
         logger.error("❌ No matching layer pairs found!")

@@ -183,12 +183,24 @@ def main():
     )
 
     # 4. Training Setup
+    # IPSVD wraps the original Linear so the LinearSVD lives at "<name>.base_layer".
+    # We pair the target's Linear with the proxy's nested LinearSVD.
     layer_pairs = []
     proxy_dict = dict(proxy_model.named_modules())
     for name, t_mod in target_model.named_modules():
-        if any(name.endswith(tm) for tm in target_modules):
-            if name in proxy_dict and hasattr(proxy_dict[name], "linear_A"):
-                layer_pairs.append((t_mod, proxy_dict[name]))
+        if not any(name.endswith(tm) for tm in target_modules):
+            continue
+        for proxy_path in (name, f"{name}.base_layer"):
+            cand = proxy_dict.get(proxy_path)
+            if cand is not None and hasattr(cand, "linear_A"):
+                layer_pairs.append((t_mod, cand))
+                break
+    logger.info(f"[IPSVD] Paired {len(layer_pairs)} target/proxy layers for gradient alignment.")
+    if not layer_pairs:
+        raise RuntimeError(
+            "No target/proxy layer pairs found. Check that target_modules names match "
+            "the model's layer naming and that init_proxy_model_with_IPSVD ran successfully."
+        )
 
     optimizer = AdamW(filter(lambda p: p.requires_grad, proxy_model.parameters()), lr=args.lr)
 
