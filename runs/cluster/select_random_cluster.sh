@@ -1,8 +1,8 @@
 #!/bin/bash 
 
-#OAR -q besteffort
+#OAR -q production  
 #OAR -l host=1/gpu=1,walltime=3:00:00
-#OAR -p grue AND gpu_compute_capability_major>=7
+#OAR -p gruss AND gpu_compute_capability_major>=7
 #OAR -O OAR_%jobid%.out
 #OAR -E OAR_%jobid%.err 
 
