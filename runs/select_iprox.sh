@@ -65,7 +65,8 @@ python iprox/train_iprox.py \
     --epochs "${EPOCHS}" \
     --lr "${LR}" \
     --gradient_accumulation_steps "${GRAD_ACC}" \
-    --end_index "${END_INDEX}"
+    --end_index "${END_INDEX}" \
+    --target_modules ${LORA_TARGET_MODULES}
 
 # Step 2: Compute Similarity Matrix
 # Note: This uses the trained proxy to compute a (dev x train) similarity matrix.
@@ -75,7 +76,8 @@ python iprox/compute_iprox_scores.py \
     --benchmark "${BENCHMARK}" \
     --train_dataset_name "${TRAIN_DATASET}" \
     --output_dir "${IPROX_SCORES_DIR}" \
-    --end_index "${END_INDEX}"
+    --end_index "${END_INDEX}" \
+    --target_modules ${LORA_TARGET_MODULES}
 
 # Step 3: Perform Selection
 IPROX_MATRIX="${IPROX_SCORES_DIR}/${BENCHMARK}_cossim.npy"

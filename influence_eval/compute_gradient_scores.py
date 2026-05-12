@@ -22,7 +22,10 @@ import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
+from datasets import Dataset as HFDataset
+
 from common.data import construct_test_sample, encode_with_messages_format
+from influence_eval.bbh_data import load_bbh_samples
 from influence_eval.model_utils import count_params, load_base_with_fresh_lora
 from representation.helper import batch_cosine_similarity
 from representation.less.compute_less_embeds import (
@@ -62,11 +65,12 @@ def load_anchor_dataset(
     num_anchors: int,
     max_length: int = 2048,
 ) -> torch.utils.data.Dataset:
-    ds = load_dataset(
-        "Harvard-DCML/targeted-query-set-processed", dev_dataset_name, split="dev"
-    )
-    take = min(num_anchors, len(ds))
-    ds = ds.select(range(0, take))
+    # Load from local BBH files (same seed=42 shuffle as gradient_stocking.py)
+    # Spearman eval anchors are always [0:num_anchors]
+    samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
+    # construct_test_sample expects "prompts"/"labels" keys
+    renamed = [{"prompts": s["prompt"], "labels": s["response"]} for s in samples]
+    ds = HFDataset.from_list(renamed)
     ds = ds.map(
         lambda x: construct_test_sample(
             tokenizer=tokenizer, sample=x, max_length=max_length
@@ -75,7 +79,7 @@ def load_anchor_dataset(
         load_from_cache_file=False,
     )
     ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
-    logger.info("Loaded %d anchor samples from %s", len(ds), dev_dataset_name)
+    logger.info("Loaded %d anchor samples from local BBH [0:%d]", len(ds), num_anchors)
     return ds
 
 

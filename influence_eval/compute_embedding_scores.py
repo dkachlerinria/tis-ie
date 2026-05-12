@@ -10,11 +10,9 @@ import os
 import torch
 from sentence_transformers import SentenceTransformer
 
+from influence_eval.bbh_data import bbh_texts_for_encoder
 from influence_eval.model_utils import count_params  # only for the encoder param count
-from representation.embed.compute_sentence_embeds import (
-    compute_eval_embeddings,
-    compute_train_embeddings,
-)
+from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
 
 logger = logging.getLogger(__name__)
@@ -59,16 +57,17 @@ def main():
         debug=False,
     )
 
-    # Anchor embeddings (full dev split, then sliced to [0:num_anchors])
-    anchor_embeds_full = compute_eval_embeddings(
-        model=model,
-        tokenizer=tokenizer,
-        eval_dataset_name=args.dev_dataset_name,
-        split="dev",
-        batch_size=args.batch_size,
+    # Anchor embeddings from local BBH [0:num_anchors] (same slice as ground truth)
+    anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
+    anchor_embeds = torch.from_numpy(
+        model.encode(
+            anchor_texts,
+            batch_size=args.batch_size,
+            show_progress_bar=True,
+            convert_to_numpy=True,
+            normalize_embeddings=False,
+        )
     )
-    take = min(args.num_anchors, anchor_embeds_full.shape[0])
-    anchor_embeds = anchor_embeds_full[:take]
     logger.info(
         "Train embeds: %s, anchor embeds: %s",
         tuple(train_embeds.shape),

@@ -160,6 +160,15 @@ def main():
     # 3. Initialize Proxy Model
     os.makedirs(args.output_dir, exist_ok=True)
     logger.info(f"🔧 Initializing proxy with {args.init_method}...")
+    
+    # Diagnostic: Check module names
+    linear_modules = [n for n, m in target_model.named_modules() if isinstance(m, torch.nn.Linear)]
+    logger.info(f"🔍 Found {len(linear_modules)} linear modules in target model.")
+    if len(linear_modules) > 0:
+        logger.info(f"🔍 Sample linear modules: {linear_modules[:5]}")
+    else:
+        logger.warning("⚠️ No linear modules found in target model! Check model loading.")
+
     proxy_model = init_proxy_model_with_IPSVD(
         base_model=target_model,
         loader_src=val_dataloader,

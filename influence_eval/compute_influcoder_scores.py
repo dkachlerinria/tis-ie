@@ -13,11 +13,9 @@ import torch
 from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForCausalLM
 
+from influence_eval.bbh_data import bbh_texts_for_encoder
 from influence_eval.model_utils import count_params
-from representation.embed.compute_sentence_embeds import (
-    compute_eval_embeddings,
-    compute_train_embeddings,
-)
+from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
 
 logger = logging.getLogger(__name__)
@@ -70,15 +68,17 @@ def compute_influcoder_scores(
         debug=False,
     )
 
-    anchor_embeds_full = compute_eval_embeddings(
-        model=model,
-        tokenizer=tokenizer,
-        eval_dataset_name=dev_dataset_name,
-        split="dev",
-        batch_size=batch_size,
+    # Anchor embeddings from local BBH [0:num_anchors] (same slice as ground truth)
+    anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
+    anchor_embeds = torch.from_numpy(
+        model.encode(
+            anchor_texts,
+            batch_size=batch_size,
+            show_progress_bar=True,
+            convert_to_numpy=True,
+            normalize_embeddings=False,
+        )
     )
-    take = min(num_anchors, anchor_embeds_full.shape[0])
-    anchor_embeds = anchor_embeds_full[:take]
     logger.info(
         "Train embeds: %s, anchor embeds: %s",
         tuple(train_embeds.shape),

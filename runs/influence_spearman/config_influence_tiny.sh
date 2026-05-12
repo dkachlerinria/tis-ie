@@ -14,7 +14,7 @@ export GT_PROJ_DIM=16384
 # Project after every sample to minimize gradient accumulation in memory
 export PROJECT_INTERVAL=1
 
-export RUN_ID="${MODEL_SLUG}_tiny_anchors${NUM_ANCHORS}_train${END_INDEX}"
+export RUN_ID="${INFLUENCE_MODEL_SLUG}_tiny_anchors${NUM_ANCHORS}_train${END_INDEX}"
 export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
 
 # Tiny influcoder overrides
