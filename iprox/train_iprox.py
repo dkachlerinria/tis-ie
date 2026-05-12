@@ -121,10 +121,15 @@ def main():
     if getattr(tokenizer, "pad_token", None) is None:
         tokenizer.pad_token = tokenizer.eos_token
         
+    # attn_implementation="eager" is required when gradient checkpointing is on:
+    # SDPA's backend dispatch can pick a different kernel between forward and
+    # recomputation, causing checkpoint metadata-mismatch errors. Eager attention
+    # is deterministic across forward and recompute.
     target_model = AutoModelForCausalLM.from_pretrained(
         args.target_model,
         torch_dtype=torch.bfloat16,
-        device_map="auto"
+        device_map="auto",
+        attn_implementation="eager",
     )
 
     # 2. Load Datasets via HF

@@ -514,10 +514,15 @@ if __name__ == "__main__":
         tokenizer.pad_token = tokenizer.eos_token
         logger.info(f"Set pad_token to eos_token: {tokenizer.eos_token}")
     
+    # attn_implementation="eager" is required when gradient checkpointing is on:
+    # SDPA's backend dispatch can pick a different kernel between forward and
+    # recomputation, causing checkpoint metadata-mismatch errors. Eager attention
+    # is deterministic across forward and recompute.
     target_model = AutoModelForCausalLM.from_pretrained(
         args.target_model,
         torch_dtype=torch.bfloat16,
-        device_map="auto"
+        device_map="auto",
+        attn_implementation="eager",
     )
     
     # Resize embeddings if needed
