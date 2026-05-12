@@ -46,105 +46,61 @@ fi
 LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
 echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
 
-# Step 1: Stock Gradients (Reuse the strict 4-way partitioning from Influcoder)
-# Note: IProX trains on these gradients to align its proxy model.
-mkdir -p "${IPROX_DB_DIR}"
-
-# Step 1a: Stock train_anchors
-echo "Step 1a: Stocking train_anchors gradients (using ${BENCHMARK})..."
-python influcoder/gradient_stocking.py \
-    --dataset "${BENCHMARK}" \
-    --train_dataset_name "${TRAIN_DATASET}" \
-    --split train_anchors \
-    --model_name "${TRAINING_MODEL}" \
-    --proj_dim "${PROJ_DIM}" \
-    --n_samples "${N_TRAIN_ANCHORS}" \
-    --start_index 0 \
-    --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    ${RECOMPUTE_FLAG} \
-    --target_modules ${LORA_TARGET_MODULES} \
-    --output_name "${IPROX_DB_DIR}/train_anchors"
-
-# Step 1b: Stock eval_anchors
-echo "Step 1b: Stocking eval_anchors gradients (using ${BENCHMARK})..."
-python influcoder/gradient_stocking.py \
-    --dataset "${BENCHMARK}" \
-    --train_dataset_name "${TRAIN_DATASET}" \
-    --split eval_anchors \
-    --model_name "${TRAINING_MODEL}" \
-    --proj_dim "${PROJ_DIM}" \
-    --n_samples "${N_EVAL_ANCHORS}" \
-    --start_index "${N_TRAIN_ANCHORS}" \
-    --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    ${RECOMPUTE_FLAG} \
-    --target_modules ${LORA_TARGET_MODULES} \
-    --output_name "${IPROX_DB_DIR}/eval_anchors"
-
-# Step 1c: Stock pool
-echo "Step 1c: Stocking pool gradients (using tulu)..."
-python influcoder/gradient_stocking.py \
-    --dataset tulu \
-    --train_dataset_name "${TRAIN_DATASET}" \
-    --split pool \
-    --model_name "${TRAINING_MODEL}" \
-    --proj_dim "${PROJ_DIM}" \
-    --n_samples "${N_TRAIN_POOL}" \
-    --start_index 0 \
-    --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    ${RECOMPUTE_FLAG} \
-    --target_modules ${LORA_TARGET_MODULES} \
-    --output_name "${IPROX_DB_DIR}/pool"
-
-# Step 1d: Stock eval_pool
-echo "Step 1d: Stocking eval_pool gradients (using tulu)..."
-python influcoder/gradient_stocking.py \
-    --dataset tulu \
-    --train_dataset_name "${TRAIN_DATASET}" \
-    --split eval_pool \
-    --model_name "${TRAINING_MODEL}" \
-    --proj_dim "${PROJ_DIM}" \
-    --n_samples "${N_EVAL_POOL}" \
-    --start_index "${N_TRAIN_POOL}" \
-    --load_warmup_path "${LESS_WARMUP_CKPT}" \
-    ${RECOMPUTE_FLAG} \
-    --target_modules ${LORA_TARGET_MODULES} \
-    --output_name "${IPROX_DB_DIR}/eval_pool"
-
-# Step 2: Train the IProX Proxy
-echo "Step 2: Training IProX proxy..."
-python iprox/train_iprox_gradients.py \
-    --run_mode "${IPROX_RUN_MODE}" \
-    --anchor_train_db "${IPROX_DB_DIR}/train_anchors.sqlite" \
-    --anchor_eval_db  "${IPROX_DB_DIR}/eval_anchors.sqlite" \
-    --pool_train_db   "${IPROX_DB_DIR}/pool.sqlite" \
-    --pool_eval_db    "${IPROX_DB_DIR}/eval_pool.sqlite" \
-    --target_model "${TRAINING_MODEL}" \
+## Step 1: Train the IProX Proxy
+# Note: IProX trains a small proxy model to mimic the gradients of the target model.
+echo "Step 1: Training IProX proxy..."
+python iprox/train_iprox.py \
+    --target_model "${LESS_WARMUP_CKPT}" \
+    --benchmark "${BENCHMARK}" \
+    --train_dataset "${TRAIN_DATASET}" \
+    --n_train_a "${N_TRAIN_ANCHORS}" \
+    --n_train_p "${N_TRAIN_POOL}" \
     --sparsity "${IPROX_SPARSITY}" \
     --lambda_anchor "${IPROX_LAMBDA}" \
-    --output_dir "${TRAINED_PROXY_DIR}"
+    --output_dir "${TRAINED_PROXY_DIR}" \
+    --epochs "${EPOCHS}" \
+    --lr "${LR}" \
+    --gradient_accumulation_steps "${GRAD_ACC}"
 
-# Step 3: Compute Influence Scores for Data Selection
-# Note: This uses the trained proxy to score the FULL training dataset.
-echo "Step 3: Computing influence scores with IProX proxy..."
+# Step 2: Compute Similarity Matrix
+# Note: This uses the trained proxy to compute a (dev x train) similarity matrix.
+echo "Step 2: Computing IProX similarity matrix..."
 python iprox/compute_iprox_scores.py \
     --proxy_path "${TRAINED_PROXY_DIR}/model" \
     --benchmark "${BENCHMARK}" \
     --train_dataset_name "${TRAIN_DATASET}" \
-    --output_dir "${IPROX_SCORES_DIR}"
+    --output_dir "${IPROX_SCORES_DIR}" \
+    --end_index "${END_INDEX}"
 
-# Step 4: Perform Selection
-echo "Step 4: Selecting top ${NUM_SAMPLES} samples..."
-python selection/select_data.py \
-    --score_path "${IPROX_SCORES_DIR}/scores.pt" \
-    --num_samples "${NUM_SAMPLES}" \
-    --output_dir "${DATASET_DIR}"
+# Step 3: Perform Selection
+IPROX_MATRIX="${IPROX_SCORES_DIR}/${BENCHMARK}_cossim.npy"
 
-# Step 5: Fine-tune
-echo "Step 5: Fine-tuning on selected data..."
+echo "Step 3: Performing data selection with sim_subset..."
+python3 -m selection.sim_subset \
+    --selection_method "${SELECTION_METHOD}" \
+    --subset_dataset_dir "${DATASET_DIR}" \
+    --similarity_matrix_path "${IPROX_MATRIX}" \
+    --train_dataset_name "${TRAIN_DATASET}" \
+    --dev_dataset_name "${BENCHMARK}" \
+    --sizes "${NUM_SAMPLES}" \
+    --end_index "${END_INDEX}"
+
+SELECTED_DATA="${DATASET_DIR}/${BENCHMARK}_subset_top${NUM_SAMPLES}.jsonl"
+
+# Step 4: Fine-tune
+echo "Step 4: Fine-tuning ${TRAINING_MODEL} on ${SELECTED_DATA}..."
 python3 -m training.train_sft \
     --model_name_or_path "${TRAINING_MODEL}" \
-    --dataset_path "${DATASET_DIR}" \
+    --train_dataset_path "${SELECTED_DATA}" \
     --output_dir "${MODEL_DIR}" \
+    --per_device_train_batch_size ${BATCH_SIZE} \
+    --gradient_accumulation_steps ${GRAD_ACC} \
+    --num_train_epochs ${EPOCHS} \
+    --learning_rate ${LR} \
+    --seed ${SEED} \
+    --warmup_ratio ${WARMUP_RATIO} \
+    --lr_scheduler_type ${LR_SCHEDULER} \
+    --weight_decay ${WEIGHT_DECAY} \
     --bf16 ${BF16} \
     --use_lora ${USE_LORA} \
     --lora_rank ${LORA_RANK} \
@@ -154,8 +110,8 @@ python3 -m training.train_sft \
     --save_strategy no \
     --report_to "none"
 
-# Step 6: Evaluate
-echo "Step 6: Evaluating on ${BENCHMARK}..."
+# Step 5: Evaluate
+echo "Step 5: Evaluating on ${BENCHMARK}..."
 python3 -m evaluation.run_eval \
     --model_name_or_path "${MODEL_DIR}" \
     --eval_dataset "${BENCHMARK}" \

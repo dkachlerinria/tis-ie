@@ -3,3 +3,6 @@ python3 -m evaluation.run_eval --model_name_or_path "Qwen/Qwen2.5-0.5B" --eval_d
 ssh -J dkachler@ssh-lne.inria.fr dkachler@magnet6.lille.inria.fr
 
 oarsub -l gpu=1 -I -p gruss
+
+
+bash runs/influence_spearman/stock_influcoder_gradients.sh runs/influence_spearman/config_influence_tiny.sh
