@@ -889,18 +889,22 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.load_warmup_path)
     ensure_chat_template(tokenizer)
 
+    # attn_implementation="eager" required: torch.utils.flop_counter's SDPA
+    # handler crashes on GQA models (see KNOWN_ISSUES.txt).
     if os.path.exists(os.path.join(args.load_warmup_path, "adapter_config.json")):
         print("   Detected LoRA checkpoint — loading base model and merging adapter...")
         peft_cfg = PeftConfig.from_pretrained(args.load_warmup_path)
         model = AutoModelForCausalLM.from_pretrained(
-            peft_cfg.base_model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto"
+            peft_cfg.base_model_name_or_path, torch_dtype=torch.bfloat16,
+            device_map="auto", attn_implementation="eager",
         )
         model.resize_token_embeddings(len(tokenizer))
         model = PeftModel.from_pretrained(model, args.load_warmup_path)
         model = model.merge_and_unload()
     else:
         model = AutoModelForCausalLM.from_pretrained(
-            args.load_warmup_path, torch_dtype=torch.bfloat16, device_map="auto"
+            args.load_warmup_path, torch_dtype=torch.bfloat16,
+            device_map="auto", attn_implementation="eager",
         )
 
     # Expand "all-linear" before setting requires_grad
