@@ -40,10 +40,13 @@ def main():
     torch.save(scores, out_path)
     logger.info("Saved random score matrix: %s shape=%s", out_path, tuple(scores.shape))
 
+    # Random is trivial RNG; one draw per matrix cell. FlopCounterMode doesn't
+    # meaningfully count RNG ops, so we record the exact count directly.
     meta = {
         "num_anchors": int(scores.shape[0]),
         "num_train": int(scores.shape[1]),
         "seed": int(args.seed),
+        "measured_flops": int(scores.shape[0]) * int(scores.shape[1]),
     }
     torch.save(meta, os.path.join(args.save_dir, f"{args.out_name}_params.pt"))
 

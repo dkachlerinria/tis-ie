@@ -1,0 +1,21 @@
+KNOWN ISSUES
+============
+
+SDPA attention is pinned for FLOP-measurement reproducibility
+-------------------------------------------------------------
+`influence_eval/model_utils.py:load_base_with_fresh_lora` forces
+`attn_implementation="sdpa"` when loading any HF causal LM for the
+influence-Spearman pipeline.
+
+Why: measured FLOPs from `torch.utils.flop_counter.FlopCounterMode` are
+dispatch-based, so the count depends on which attention kernel actually
+runs (eager vs sdpa vs flash). Pinning SDPA makes the FLOPs column in
+`results.json` reproducible across machines with different default
+attention backends.
+
+Risk: if a future HF model architecture lacks SDPA support (or has a
+buggy SDPA path), loading will fail or produce incorrect outputs. In
+that case, fall back to `attn_implementation="eager"` in
+`load_base_with_fresh_lora` and RE-MEASURE all FLOPs from scratch —
+mixing measurements taken under different attention backends will not
+compare meaningfully.

@@ -11,6 +11,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 from influence_eval.bbh_data import bbh_texts_for_encoder
+from influence_eval.flops_measure import flop_counter
 from influence_eval.model_utils import count_params  # only for the encoder param count
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
@@ -46,41 +47,44 @@ def main():
         model.to("cuda")
     tokenizer = model.tokenizer
 
-    # Train embeddings (sliced to [0:end_index])
-    train_embeds = compute_train_embeddings(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset_path=None,
-        batch_size=args.batch_size,
-        start_index=0,
-        end_index=args.end_index,
-        debug=False,
-    )
-
-    # Anchor embeddings from local BBH [0:num_anchors] (same slice as ground truth)
+    # Load anchor texts outside FlopCounterMode (no GPU work).
     anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
-    anchor_embeds = torch.from_numpy(
-        model.encode(
-            anchor_texts,
+
+    with flop_counter() as counter:
+        # Train embeddings (sliced to [0:end_index])
+        train_embeds = compute_train_embeddings(
+            model=model,
+            tokenizer=tokenizer,
+            train_dataset_path=None,
             batch_size=args.batch_size,
-            show_progress_bar=True,
-            convert_to_numpy=True,
-            normalize_embeddings=False,
+            start_index=0,
+            end_index=args.end_index,
+            debug=False,
         )
-    )
+        # Anchor embeddings from local BBH [0:num_anchors] (same slice as ground truth)
+        anchor_embeds = torch.from_numpy(
+            model.encode(
+                anchor_texts,
+                batch_size=args.batch_size,
+                show_progress_bar=True,
+                convert_to_numpy=True,
+                normalize_embeddings=False,
+            )
+        )
+        # Score matrix
+        scores = batch_cosine_similarity(
+            dev_reps=anchor_embeds,
+            train_reps=train_embeds,
+            chunk_size=1024,
+            normalize=False,
+        ).float()
+    measured_flops = int(counter.get_total_flops())
     logger.info(
-        "Train embeds: %s, anchor embeds: %s",
+        "Train embeds: %s, anchor embeds: %s, measured FLOPs: %.3e",
         tuple(train_embeds.shape),
         tuple(anchor_embeds.shape),
+        measured_flops,
     )
-
-    # Score matrix
-    scores = batch_cosine_similarity(
-        dev_reps=anchor_embeds,
-        train_reps=train_embeds,
-        chunk_size=1024,
-        normalize=False,
-    ).float()
 
     out_path = os.path.join(args.save_dir, f"{args.out_name}_scores.pt")
     torch.save(scores, out_path)
@@ -93,6 +97,7 @@ def main():
         "num_anchors": int(scores.shape[0]),
         "num_train": int(scores.shape[1]),
         "emb_dim": int(train_embeds.shape[1]),
+        "measured_flops": measured_flops,
     }
     torch.save(meta, os.path.join(args.save_dir, f"{args.out_name}_params.pt"))
 

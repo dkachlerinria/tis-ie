@@ -23,6 +23,7 @@ if _LOGRA_DIR not in sys.path:
 from less.utils.modeling_logra import LoGra
 
 from influence_eval.compute_gradient_scores import load_anchor_dataset, load_train_dataset
+from influence_eval.flops_measure import flop_counter
 
 logger = logging.getLogger(__name__)
 
@@ -55,33 +56,47 @@ def compute_logra_scores(
     train_ds = load_train_dataset(tokenizer, end_index)
     anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
 
-    logger.info("Encoding %d train samples (accumulating FIM)...", len(train_ds))
-    train_embeds = logra.encode(train_ds, batch_size=batch_size, is_test=False)
-    logger.info("Train embeds shape: %s", train_embeds.shape)
+    # Shared encoding cost (train + anchors + FIM accumulation).
+    with flop_counter() as enc_counter:
+        logger.info("Encoding %d train samples (accumulating FIM)...", len(train_ds))
+        train_embeds = logra.encode(train_ds, batch_size=batch_size, is_test=False)
+        logger.info("Train embeds shape: %s", train_embeds.shape)
 
-    # Save training FIM before anchor encoding overwrites it
-    train_fim = logra.fim
+        # Save training FIM before anchor encoding overwrites it
+        train_fim = logra.fim
 
-    logger.info("Encoding %d anchors (raw, is_test=False)...", len(anchor_ds))
-    raw_anchor_embeds = logra.encode(anchor_ds, batch_size=batch_size, is_test=False)
-    logger.info("Raw anchor embeds shape: %s", raw_anchor_embeds.shape)
+        logger.info("Encoding %d anchors (raw, is_test=False)...", len(anchor_ds))
+        raw_anchor_embeds = logra.encode(anchor_ds, batch_size=batch_size, is_test=False)
+        logger.info("Raw anchor embeds shape: %s", raw_anchor_embeds.shape)
+    shared_flops = int(enc_counter.get_total_flops())
 
-    # Restore training FIM, apply preconditioning to get the FIM variant
-    logra.fim = train_fim
-    precond_anchor_embeds = (
-        logra._precondition(torch.from_numpy(raw_anchor_embeds))
-        .float()
-        .numpy()
+    # logra_raw marginal cost: raw similarity only.
+    with flop_counter() as raw_counter:
+        logger.info("Computing logra_raw scores (no FIM)...")
+        raw_sim = logra.similarity(raw_anchor_embeds, train_embeds, mode="cosine")
+        raw_scores = torch.from_numpy(raw_sim).float()
+    raw_marginal_flops = int(raw_counter.get_total_flops())
+
+    # logra_fim marginal cost: FIM preconditioning + FIM similarity.
+    with flop_counter() as fim_counter:
+        logra.fim = train_fim
+        precond_anchor_embeds = (
+            logra._precondition(torch.from_numpy(raw_anchor_embeds))
+            .float()
+            .numpy()
+        )
+        logger.info("FIM-preconditioned anchor embeds shape: %s", precond_anchor_embeds.shape)
+        logger.info("Computing logra_fim scores (FIM-preconditioned)...")
+        fim_sim = logra.similarity(precond_anchor_embeds, train_embeds, mode="cosine")
+        fim_scores = torch.from_numpy(fim_sim).float()
+    fim_marginal_flops = int(fim_counter.get_total_flops())
+
+    raw_flops = shared_flops + raw_marginal_flops
+    fim_flops = shared_flops + fim_marginal_flops
+    logger.info(
+        "FLOPs — shared=%.3e, raw_total=%.3e, fim_total=%.3e",
+        shared_flops, raw_flops, fim_flops,
     )
-    logger.info("FIM-preconditioned anchor embeds shape: %s", precond_anchor_embeds.shape)
-
-    logger.info("Computing logra_raw scores (no FIM)...")
-    raw_sim = logra.similarity(raw_anchor_embeds, train_embeds, mode="cosine")
-    raw_scores = torch.from_numpy(raw_sim).float()
-
-    logger.info("Computing logra_fim scores (FIM-preconditioned)...")
-    fim_sim = logra.similarity(precond_anchor_embeds, train_embeds, mode="cosine")
-    fim_scores = torch.from_numpy(fim_sim).float()
 
     raw_path = os.path.join(save_dir, "logra_raw_scores.pt")
     fim_path = os.path.join(save_dir, "logra_fim_scores.pt")
@@ -92,16 +107,21 @@ def compute_logra_scores(
 
     total = sum(p.numel() for p in logra.model.parameters())
     trainable = sum(p.numel() for p in logra.model.parameters() if p.requires_grad)
-    params = {
+    base_params = {
         "total": total,
         "trainable": trainable,
         "num_anchors": int(raw_scores.shape[0]),
         "num_train": int(raw_scores.shape[1]),
         "model_name": model_name,
     }
-    # Same params metadata applies to both variants
-    torch.save(params, os.path.join(save_dir, "logra_raw_params.pt"))
-    torch.save(params, os.path.join(save_dir, "logra_fim_params.pt"))
+    torch.save(
+        {**base_params, "measured_flops": raw_flops},
+        os.path.join(save_dir, "logra_raw_params.pt"),
+    )
+    torch.save(
+        {**base_params, "measured_flops": fim_flops},
+        os.path.join(save_dir, "logra_fim_params.pt"),
+    )
     logger.info("Saved params for both variants")
 
 

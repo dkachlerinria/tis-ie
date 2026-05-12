@@ -1,17 +1,17 @@
-"""Analytic FLOPS formulas per selection method.
+"""FLOPS dispatch per selection method.
 
-Closed-form so they're reproducible across hardware. Includes a
-__main__ profiler sanity check that compares analytic vs measured
-FLOPS for one forward+backward pass.
+Preferred path: each compute_*_scores.py wraps its GPU workload in
+`torch.utils.flop_counter.FlopCounterMode` (see influence_eval.flops_measure)
+and saves `measured_flops` into its `{method}_params.pt`. `flops_for_method`
+returns that integer directly when present.
 
-Conventions:
-  - Forward through dense linear layers: ~ 2 * P * L FLOPS where P is
-    parameter count and L is sequence length.
-  - Backward: ~ 2x forward (the standard rule of thumb for autograd
-    through dense linear graphs), so ~ 4 * P * L. Total fwd+bwd ~ 6 P L.
-  - This counts the full forward+backward through the WHOLE network
-    even when only LoRA params are trainable, because PyTorch still
-    computes activation grads through frozen layers.
+Fallback path: the analytic functions below (6*P*L for fwd+bwd, 2*P*L for
+fwd-only, plus TRAK projection and cosine-matrix terms) are kept so old
+runs without `measured_flops` still produce a number. They are NOT the
+primary source of truth anymore.
+
+The __main__ profiler check still compares analytic vs measured for one
+forward+backward as a sanity test on the heuristic.
 """
 
 import argparse
@@ -134,9 +134,13 @@ def flops_influcoder(
 def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional[int]:
     """Dispatch helper for run_experiment.py.
 
-    `params` is the dict saved by each compute_*_scores.py as
-    `{method}_params.pt`.
+    Prefers `params["measured_flops"]` (set by compute_*_scores.py wrapping
+    workload in FlopCounterMode). Falls back to analytic formulas below for
+    backward compatibility with old params dicts.
     """
+    if "measured_flops" in params and params["measured_flops"] is not None:
+        return int(params["measured_flops"])
+
     if method in ("ground_truth", "less"):
         return flops_less(
             num_params_total=params["total"],

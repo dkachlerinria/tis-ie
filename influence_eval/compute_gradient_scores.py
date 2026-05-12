@@ -26,6 +26,7 @@ from datasets import Dataset as HFDataset
 
 from common.data import construct_test_sample, encode_with_messages_format
 from influence_eval.bbh_data import load_bbh_samples
+from influence_eval.flops_measure import flop_counter
 from influence_eval.model_utils import count_params, load_base_with_fresh_lora
 from representation.helper import batch_cosine_similarity
 from representation.less.compute_less_embeds import (
@@ -116,30 +117,30 @@ def compute_scores(
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
 
-    # Train grads
+    # Load datasets outside FlopCounterMode (data loading is not GPU work).
     train_ds = load_train_dataset(tokenizer, end_index)
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
-    logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
-    train_grads = _collect_and_normalize(train_dl, model, proj_dim, project_interval)
-
-    # Anchor grads
     anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
     anchor_dl = torch.utils.data.DataLoader(anchor_ds, batch_size=1, shuffle=False)
+
+    logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
     logger.info("Computing %d anchor gradients (proj_dim=%d)", len(anchor_ds), proj_dim)
-    anchor_grads = _collect_and_normalize(anchor_dl, model, proj_dim, project_interval)
+
+    with flop_counter() as counter:
+        train_grads = _collect_and_normalize(train_dl, model, proj_dim, project_interval)
+        anchor_grads = _collect_and_normalize(anchor_dl, model, proj_dim, project_interval)
+        scores = batch_cosine_similarity(
+            dev_reps=anchor_grads,
+            train_reps=train_grads,
+            chunk_size=256,
+            normalize=False,
+        ).float()
+    measured_flops = int(counter.get_total_flops())
+    logger.info("Measured FLOPs: %.3e", measured_flops)
 
     if save_grads:
         torch.save(train_grads, os.path.join(save_dir, f"{out_name}_train_grads.pt"))
         torch.save(anchor_grads, os.path.join(save_dir, f"{out_name}_anchor_grads.pt"))
-
-    # Score matrix
-    logger.info("Computing cosine similarity matrix")
-    scores = batch_cosine_similarity(
-        dev_reps=anchor_grads,
-        train_reps=train_grads,
-        chunk_size=256,
-        normalize=False,
-    ).float()
 
     out_path = os.path.join(save_dir, f"{out_name}_scores.pt")
     torch.save(scores, out_path)
@@ -149,6 +150,7 @@ def compute_scores(
         "num_anchors": int(scores.shape[0]),
         "num_train": int(scores.shape[1]),
         "proj_dim": int(proj_dim),
+        "measured_flops": measured_flops,
     }
     return out_path, meta
 
