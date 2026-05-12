@@ -14,7 +14,7 @@ export NUM_ANCHORS=100
 
 # Projection dimensions
 export GT_PROJ_DIM=65536
-export LESS_PROJ_DIM=16384
+export LESS_PROJ_DIM=8192
 
 # Fresh-LoRA seed (must be identical across GT and LESS for apples-to-apples)
 export LORA_SEED=0
@@ -27,7 +27,7 @@ export LORA_RANK=16
 export LORA_ALPHA=32
 
 # LoGRA settings (rank=8 matches paper default)
-export LOGRA_RANK=8
+export LOGRA_RANK=16
 export LOGRA_BATCH_SIZE=1
 # Target all-linear layers (like LESS) for fair comparison, not just MLP
 export LOGRA_ALL_LINEAR=1
