@@ -27,7 +27,7 @@ export LORA_RANK=16
 export LORA_ALPHA=32
 
 # LoGRA settings (rank=8 matches paper default)
-export LOGRA_RANK=16
+export LOGRA_RANK=8
 export LOGRA_BATCH_SIZE=1
 # Target all-linear layers (like LESS) for fair comparison, not just MLP
 export LOGRA_ALL_LINEAR=1

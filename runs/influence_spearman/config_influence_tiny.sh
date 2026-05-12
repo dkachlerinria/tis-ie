@@ -4,8 +4,8 @@
 source runs/influence_spearman/config_influence.sh
 
 # Override sizes (very small for memory constraints)
-export NUM_ANCHORS=5
-export END_INDEX=50
+export NUM_ANCHORS=20
+export END_INDEX=200
 
 # Smaller ground-truth projection (still high relative to LESS@8192).
 # Use validate_projection.sh once to confirm this is fine.
