@@ -25,7 +25,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from airrep.airrep_trainer import AirRepTrainer  # noqa: E402
-from influence_eval.bbh_data import _ENCODER_PREFIX, load_bbh_samples  # noqa: E402
+from influence_eval.bbh_data import bbh_texts_for_encoder  # noqa: E402
 from influence_eval.flops_measure import flop_counter, save_phase_flops  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -131,21 +131,18 @@ def main():
     for pair in pairs:
         subset_texts.append([_concat_messages_text(tulu[i], tt) for i in pair["select"]])
 
-    # ----- Format dev texts (BBH, encoder-style prefix).
+    # ----- Format dev texts (BBH, same encoder-style prefix as Spearman anchors).
     logger.info("Loading BBH dev pool and formatting dev texts...")
-    bbh_dev = load_bbh_samples(
+    bbh_dev_texts = bbh_texts_for_encoder(
         n_samples=pairs_cfg["dev_pool_size"],
         start_index=pairs_cfg["num_anchors"],
     )
-
-    def _bbh_text(sample: dict) -> str:
-        return f"{_ENCODER_PREFIX} {sample['prompt']} {sample['response']}".strip()
 
     dev_texts_by_id = {}
     for pair in pairs:
         if pair["dev_id"] in dev_texts_by_id:
             continue
-        dev_texts_by_id[pair["dev_id"]] = [_bbh_text(bbh_dev[j]) for j in pair["dev"]]
+        dev_texts_by_id[pair["dev_id"]] = [bbh_dev_texts[j] for j in pair["dev"]]
 
     # ----- Train.
     trainer = AirRepTrainer(
