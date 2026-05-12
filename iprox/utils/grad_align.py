@@ -152,12 +152,31 @@ def train_with_gradient_alignment(
                 target_model.train()
                 proxy_model.train()
 
+                # Re-assert requires_grad on tracked target weights. Something
+                # in the broader pipeline (Accelerate hooks, callbacks calling
+                # requires_grad_() on other modules, etc.) can flip these off,
+                # which makes l_target's forward pass produce a tensor without
+                # a grad_fn and breaks autograd_grad below.
+                for w in t_weights:
+                    if not w.requires_grad:
+                        w.requires_grad_(True)
+
                 with _sdpa_math_ctx():
                     target_outputs = target_model(**batch)
                     proxy_outputs = proxy_model(**batch)
 
                 l_target, t_logits = _supervised_loss(target_outputs, batch)
                 l_surr,   p_logits = _supervised_loss(proxy_outputs, batch)
+
+                # Diagnostic: if l_target has no grad_fn, autograd_grad below
+                # will fail with a cryptic error. Surface the real cause here.
+                if not l_target.requires_grad:
+                    n_req = sum(int(w.requires_grad) for w in t_weights)
+                    raise RuntimeError(
+                        f"target loss has no grad_fn. "
+                        f"t_weights with requires_grad=True: {n_req}/{len(t_weights)}. "
+                        f"Some upstream code disabled grads on the tracked layers."
+                    )
 
                 # ===== target mode gradients =====
                 t_grads = autograd_grad(
