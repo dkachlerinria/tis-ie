@@ -175,13 +175,18 @@ def main():
         device_map="auto"
     )
 
+    # Expand "all-linear" if specified
+    target_modules = args.target_modules
+    if "all-linear" in target_modules:
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
     # Re-initialize the LinearSVD structure
     proxy_model = init_proxy_model_with_IPSVD(
         base_model=base_model,
         loader_src=None,
         sparsity=args.sparsity,
         init_method="RANDOM",
-        target_modules=args.target_modules,
+        target_modules=target_modules,
         min_rank_multiple=1
     )
     

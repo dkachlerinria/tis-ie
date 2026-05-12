@@ -151,6 +151,12 @@ def main():
     train_dataloader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True, collate_fn=data_collator)
     val_dataloader = DataLoader(val_subset, batch_size=1, collate_fn=data_collator)
 
+    # Expand "all-linear" if specified
+    target_modules = args.target_modules
+    if "all-linear" in target_modules:
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        logger.info("Expanded 'all-linear' to standard projection modules.")
+
     # 3. Initialize Proxy Model
     os.makedirs(args.output_dir, exist_ok=True)
     logger.info(f"🔧 Initializing proxy with {args.init_method}...")
@@ -160,7 +166,7 @@ def main():
         sparsity=args.sparsity,
         init_method=args.init_method,
         freeze_non_md_param=True,
-        target_modules=args.target_modules,
+        target_modules=target_modules,
         min_rank_multiple=1
     )
 
@@ -168,7 +174,7 @@ def main():
     layer_pairs = []
     proxy_dict = dict(proxy_model.named_modules())
     for name, t_mod in target_model.named_modules():
-        if any(name.endswith(tm) for tm in args.target_modules):
+        if any(name.endswith(tm) for tm in target_modules):
             if name in proxy_dict and hasattr(proxy_dict[name], "linear_A"):
                 layer_pairs.append((t_mod, proxy_dict[name]))
 
