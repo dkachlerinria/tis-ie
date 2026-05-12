@@ -21,4 +21,4 @@ if [ ! -f "$SCRIPT" ]; then
 fi
 
 echo "Submitting $METHOD selection job to OAR..."
-oarsub -S "$SCRIPT"
+oarsub -S "$SCRIPT" -q production 
