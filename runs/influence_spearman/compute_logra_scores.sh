@@ -12,4 +12,5 @@ python3 -m influence_eval.compute_logra_scores \
     --num_anchors "${NUM_ANCHORS}" \
     --dev_dataset_name "${BENCHMARK}" \
     --logra_rank "${LOGRA_RANK}" \
-    --batch_size "${LOGRA_BATCH_SIZE}"
+    --batch_size "${LOGRA_BATCH_SIZE}" \
+    ${LOGRA_ALL_LINEAR:+--no_mlp_only}
