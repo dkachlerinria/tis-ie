@@ -204,6 +204,15 @@ def main():
 
     optimizer = AdamW(filter(lambda p: p.requires_grad, proxy_model.parameters()), lr=args.lr)
 
+    # Gradient checkpointing on both models to fit Stage 2 in A30/A40 memory.
+    # use_reentrant=False is required for the proxy model because grad_align.py
+    # later calls autograd_grad(..., create_graph=True) for higher-order grads.
+    target_model.config.use_cache = False
+    proxy_model.config.use_cache = False
+    target_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    proxy_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    logger.info("✓ Enabled gradient checkpointing on target_model and proxy_model.")
+
     # 5. Train with Gradient Alignment
     logger.info("🚀 Starting IProX gradient alignment...")
     train_with_gradient_alignment(

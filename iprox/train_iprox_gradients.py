@@ -677,8 +677,17 @@ if __name__ == "__main__":
     # =====================================================================
     # Step 7: Train with Gradient Alignment (IProX method)
     # =====================================================================
+    # Gradient checkpointing on both models to fit Stage 2 in A30/A40 memory.
+    # use_reentrant=False is required because grad_align.py later calls
+    # autograd_grad(..., create_graph=True) for higher-order grads.
+    target_model.config.use_cache = False
+    proxy_model.config.use_cache = False
+    target_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    proxy_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    logger.info("✓ Enabled gradient checkpointing on target_model and proxy_model.")
+
     logger.info("🚀 Starting gradient alignment training...")
-    
+
     train_with_gradient_alignment(
         target_model=target_model,
         proxy_model=proxy_model,
