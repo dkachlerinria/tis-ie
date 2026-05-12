@@ -66,7 +66,8 @@ python3 -m representation.less.compute_less_similarity \
     --ckpt_dir "${CKPT_DIR}" \
     --checkpoint_steps ${CKPT_STEPS} \
     --proj_dim ${PROJ_DIM} \
-    --num_epochs 1
+    --num_epochs 1 \
+    --end_index "${END_INDEX}"
 
 # Step 2: Perform Data Selection
 # LESS saves to {output_dir}/{dev_dataset_name}_cossim.npy
@@ -79,7 +80,8 @@ python3 -m selection.sim_subset \
     --similarity_matrix_path "${LESS_MATRIX}" \
     --train_dataset_name "${TRAIN_DATASET}" \
     --dev_dataset_name "${BENCHMARK}" \
-    --sizes ${NUM_SAMPLES}
+    --sizes ${NUM_SAMPLES} \
+    --end_index "${END_INDEX}"
 
 SELECTED_DATA="${DATASET_DIR}/${BENCHMARK}_subset_top${NUM_SAMPLES}.jsonl"
 

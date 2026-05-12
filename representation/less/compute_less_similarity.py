@@ -16,13 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 def get_train_grads(
-    train_dataset, output_dir, gradient_type, ckpt_step, proj_dim, step_size
+    train_dataset, output_dir, gradient_type, ckpt_step, proj_dim, step_size, start_index=0, end_index=None
 ):
     # check train_grads_{args.gradient_type}_{args.ckpt_step}_dim{args.proj_dim}.pt if present in the output_dir
-    full_train_grads_path = os.path.join(
-        output_dir,
-        f"train_grads_{gradient_type}_ckpt{ckpt_step}_dim{proj_dim}_normalized.pt",
-    )
+    if start_index == 0 and end_index is None:
+        full_train_grads_path = os.path.join(
+            output_dir,
+            f"train_grads_{gradient_type}_ckpt{ckpt_step}_dim{proj_dim}_normalized.pt",
+        )
+    else:
+        # If we are using a subset, we might have a single file for that subset or multiple shards.
+        # Check for the single file first.
+        full_train_grads_path = os.path.join(
+            output_dir,
+            f"train_grads_{gradient_type}_ckpt{ckpt_step}_dim{proj_dim}_{start_index}_{end_index}_normalized.pt",
+        )
     if os.path.exists(full_train_grads_path):
         logger.info("Loading train gradients from %s", full_train_grads_path)
         train_grads = torch.load(full_train_grads_path, map_location="cpu")
@@ -32,11 +40,14 @@ def get_train_grads(
         # checking for paths with start and index
         all_train_grads = []
         all_files = []
-        for start_idx in range(0, len(train_dataset), step_size):
-            end_idx = min(start_idx + step_size, len(train_dataset))
+        actual_start = start_index
+        actual_end = end_index if end_index is not None else len(train_dataset)
+        
+        for s in range(actual_start, actual_end, step_size):
+            e = min(s + step_size, actual_end)
             train_grads_path = os.path.join(
                 output_dir,
-                f"train_grads_{gradient_type}_ckpt{ckpt_step}_dim{proj_dim}_{start_idx}_{end_idx}_normalized.pt",
+                f"train_grads_{gradient_type}_ckpt{ckpt_step}_dim{proj_dim}_{s}_{e}_normalized.pt",
             )
             if os.path.exists(train_grads_path):
                 logger.info("Loading train gradients from %s", train_grads_path)
@@ -140,6 +151,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--random_seed", type=int, default=42, help="Random seed for shuffling rows."
     )
+    parser.add_argument("--start_index", type=int, default=0)
+    parser.add_argument("--end_index", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -149,6 +162,15 @@ if __name__ == "__main__":
     dev_dataset = load_dataset(
         "Harvard-DCML/targeted-query-set-processed", args.dev_dataset_name
     )["dev"]
+
+    if args.end_index is not None:
+        args.end_index = min(args.end_index, len(train_dataset))
+        train_dataset = train_dataset.select(range(args.start_index, args.end_index))
+        logger.info(
+            "Selected training dataset from index %d to %d",
+            args.start_index,
+            args.end_index,
+        )
 
     # load the learning rates from the last checkpoint trainer_state.json
     args.checkpoint_steps = sorted(args.checkpoint_steps)
@@ -162,7 +184,7 @@ if __name__ == "__main__":
         trainer_state = json.load(f)
 
     # get the learning rates
-    avg_lrs = compute_avg_lr(trainer_state)
+    avg_lrs = compute_avg_lr(trainer_state, num_epochs=args.num_epochs)
     logger.info("Average learning rates per epoch: %s", avg_lrs)
 
     # normalize the avglrs to sum to 1
@@ -186,6 +208,8 @@ if __name__ == "__main__":
             args.checkpoint_steps[t],
             args.proj_dim,
             args.step_size,
+            start_index=args.start_index,
+            end_index=args.end_index,
         )
 
         dev_grads = get_dev_grads(

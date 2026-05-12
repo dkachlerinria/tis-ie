@@ -14,8 +14,11 @@ export WARMUP_MODEL="${TRAINING_MODEL}"
 # Slug for file paths
 export MODEL_SLUG=$(echo "${TRAINING_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
-export NUM_SAMPLES=2500
-export END_INDEX=10000
+#export NUM_SAMPLES=2500
+#export END_INDEX=10000
+export NUM_SAMPLES=50
+export END_INDEX=200
+
 export SEED=0
 
 # Selection Config

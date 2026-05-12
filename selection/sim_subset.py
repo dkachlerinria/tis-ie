@@ -39,6 +39,8 @@ def main():
     parser.add_argument("--reg_m1", type=float, default=float("inf"))
     parser.add_argument("--reg_m2", type=float, default=0.0001)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--start_index", type=int, default=0)
+    parser.add_argument("--end_index", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -50,6 +52,15 @@ def main():
     set_seed(args.seed)
 
     train_dataset = load_dataset(args.train_dataset_name, split="train")
+    if args.end_index is not None:
+        args.end_index = min(args.end_index, len(train_dataset))
+        train_dataset = train_dataset.select(range(args.start_index, args.end_index))
+        logger.info(
+            "Selected training dataset subset from index %d to %d",
+            args.start_index,
+            args.end_index,
+        )
+
     dev_dataset = load_dataset(
         "Harvard-DCML/targeted-query-set-processed", args.dev_dataset_name
     )["dev"]
