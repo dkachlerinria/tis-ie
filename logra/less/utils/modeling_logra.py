@@ -245,9 +245,12 @@ class LoGra:
             base_model_name = peft_config.base_model_name_or_path
 
             # Load base model
+            # attn_implementation="eager" required: torch.utils.flop_counter's
+            # SDPA handler crashes on GQA models (see KNOWN_ISSUES.txt).
             lm_model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
                 torch_dtype=torch_dtype,
+                attn_implementation="eager",
             )
 
             # Load tokenizer from checkpoint to get vocab size
@@ -263,9 +266,12 @@ class LoGra:
             lm_model = lm_model.merge_and_unload()
         else:
             # Regular model checkpoint
+            # attn_implementation="eager" required: torch.utils.flop_counter's
+            # SDPA handler crashes on GQA models (see KNOWN_ISSUES.txt).
             lm_model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 torch_dtype=torch_dtype,
+                attn_implementation="eager",
             )
 
         # Wrap with LoGra
