@@ -34,7 +34,7 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed_all(seed)
     setseed(seed)
 
-def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, is_dev=False):
+def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, end_index=None, is_dev=False):
     """Load data using HF datasets following the TIS pattern"""
     logger.info(f"📂 Loading {'dev' if is_dev else 'train'} dataset: {dataset_name}")
     
@@ -45,24 +45,40 @@ def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, is_d
             try: ds = load_dataset(dataset_name, split="test")
             except: ds = load_dataset(dataset_name, split="validation")
         
+        if end_index:
+            ds = ds.select(range(min(end_index, len(ds))))
+        elif n_samples:
+            total = len(ds)
+            indices = list(range(start_index, min(start_index + n_samples, total)))
+            ds = ds.select(indices)
+
         def rename_keys(x):
             return {
                 "prompts": x.get("prompt", x.get("input", x.get("question", ""))),
                 "labels": x.get("response", x.get("output", x.get("answer", "")))
             }
         ds = ds.map(rename_keys)
-        ds = ds.map(lambda x: construct_test_sample(tokenizer=tokenizer, sample=x, max_length=2048))
+        ds = ds.map(
+            lambda x: construct_test_sample(tokenizer=tokenizer, sample=x, max_length=2048),
+            num_proc=16
+        )
     else:
         if os.path.exists(dataset_name):
             ds = load_dataset("json", data_files=[dataset_name])["train"]
         else:
             ds = load_dataset(dataset_name, split="train")
-        ds = ds.map(lambda x: encode_with_messages_format(example=x, tokenizer=tokenizer, max_seq_length=2048, include_response=True))
 
-    if n_samples:
-        total = len(ds)
-        indices = list(range(start_index, min(start_index + n_samples, total)))
-        ds = ds.select(indices)
+        if end_index:
+            ds = ds.select(range(min(end_index, len(ds))))
+        elif n_samples:
+            total = len(ds)
+            indices = list(range(start_index, min(start_index + n_samples, total)))
+            ds = ds.select(indices)
+
+        ds = ds.map(
+            lambda x: encode_with_messages_format(example=x, tokenizer=tokenizer, max_seq_length=2048, include_response=True),
+            num_proc=16
+        )
 
     return ds
 
@@ -81,6 +97,7 @@ def main():
     parser.add_argument('--n_train_a', type=int, default=1000, help="Num train anchors")
     parser.add_argument('--n_train_p', type=int, default=4000, help="Num train pool samples")
     parser.add_argument('--pool_start_index', type=int, default=0)
+    parser.add_argument('--end_index', type=int, default=None)
     
     # Training args
     parser.add_argument('--epochs', type=int, default=1)
@@ -112,7 +129,7 @@ def main():
 
     # 2. Load Datasets via HF
     train_anchors = load_data_split(args.benchmark, tokenizer, n_samples=args.n_train_a, is_dev=True)
-    train_pool = load_data_split(args.train_dataset, tokenizer, n_samples=args.n_train_p, start_index=args.pool_start_index, is_dev=False)
+    train_pool = load_data_split(args.train_dataset, tokenizer, n_samples=args.n_train_p, start_index=args.pool_start_index, end_index=args.end_index, is_dev=False)
     
     # We add an indicator to the items to differentiate pool vs anchor if the aligner needs it.
     def label_anchor(x): x['is_anchor'] = True; return x

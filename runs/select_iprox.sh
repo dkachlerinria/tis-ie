@@ -31,26 +31,30 @@ if [ "$FORCE_RECOMPUTE" = true ]; then
     RECOMPUTE_FLAG="--force_recompute"
 fi
 
-# Resolve "latest" checkpoint if specified
+# Resolve "latest" checkpoint if specified, otherwise fallback to base model
 if [ "${CKPT_STEPS}" = "latest" ]; then
-    echo "Finding latest checkpoint in ${CKPT_DIR}..."
+    echo "Checking for latest warmup checkpoint in ${CKPT_DIR}..."
     LATEST_CKPT=$(ls -d ${CKPT_DIR}/checkpoint-* 2>/dev/null | sort -V | tail -n 1)
-    if [ -z "${LATEST_CKPT}" ]; then
-        echo "Error: No checkpoints found in ${CKPT_DIR}. Did you run the warmup?"
-        exit 1
+    if [ -n "${LATEST_CKPT}" ]; then
+        CKPT_STEPS=$(basename ${LATEST_CKPT} | sed 's/checkpoint-//')
+        IPROX_BASE_MODEL="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
+        echo "Using latest warmup checkpoint: checkpoint-${CKPT_STEPS}"
+    else
+        echo "No checkpoints found in ${CKPT_DIR}. Falling back to base model: ${TRAINING_MODEL}"
+        IPROX_BASE_MODEL="${TRAINING_MODEL}"
     fi
-    CKPT_STEPS=$(basename ${LATEST_CKPT} | sed 's/checkpoint-//')
-    echo "Using latest checkpoint: checkpoint-${CKPT_STEPS}"
+else
+    IPROX_BASE_MODEL="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
+    echo "Using specified warmup checkpoint: checkpoint-${CKPT_STEPS}"
 fi
 
-LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
-echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
+echo "  IProX Base Model: ${IPROX_BASE_MODEL}"
 
 ## Step 1: Train the IProX Proxy
 # Note: IProX trains a small proxy model to mimic the gradients of the target model.
 echo "Step 1: Training IProX proxy..."
 python iprox/train_iprox.py \
-    --target_model "${LESS_WARMUP_CKPT}" \
+    --target_model "${IPROX_BASE_MODEL}" \
     --benchmark "${BENCHMARK}" \
     --train_dataset "${TRAIN_DATASET}" \
     --n_train_a "${N_TRAIN_ANCHORS}" \
@@ -60,7 +64,8 @@ python iprox/train_iprox.py \
     --output_dir "${TRAINED_PROXY_DIR}" \
     --epochs "${EPOCHS}" \
     --lr "${LR}" \
-    --gradient_accumulation_steps "${GRAD_ACC}"
+    --gradient_accumulation_steps "${GRAD_ACC}" \
+    --end_index "${END_INDEX}"
 
 # Step 2: Compute Similarity Matrix
 # Note: This uses the trained proxy to compute a (dev x train) similarity matrix.
