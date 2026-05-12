@@ -25,10 +25,13 @@ bash runs/influence_spearman/compute_less_scores.sh "$CFG"
 bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"
 bash runs/influence_spearman/compute_random_scores.sh "$CFG"
 bash runs/influence_spearman/compute_logra_scores.sh "$CFG"
+bash runs/influence_spearman/stock_influcoder_gradients.sh "$CFG"
+bash runs/influence_spearman/train_influcoder_encoder.sh "$CFG"
+bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG"
 
 python3 -m influence_eval.run_experiment \
     --out_dir "${INFLUENCE_OUT}" \
-    --methods less embedding random logra_raw logra_fim \
+    --methods less embedding random logra_raw logra_fim influcoder \
     --gt_name ground_truth \
     --seq_len "${FLOPS_SEQ_LEN}"
 

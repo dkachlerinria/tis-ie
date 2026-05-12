@@ -16,3 +16,13 @@ export PROJECT_INTERVAL=1
 
 export RUN_ID="${MODEL_SLUG}_tiny_anchors${NUM_ANCHORS}_train${END_INDEX}"
 export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
+
+# Tiny influcoder overrides
+export INFLUCODER_RUN_MODE="tiny"
+export INFLUCODER_N_TRAIN_A=30
+export INFLUCODER_N_EVAL_A=10
+export INFLUCODER_N_TRAIN_P=50
+export INFLUCODER_N_EVAL_P=20
+
+export INFLUCODER_DB_DIR="${INFLUENCE_OUT}/influcoder_db"
+export INFLUCODER_ENCODER_DIR="${INFLUENCE_OUT}/influcoder_encoder"

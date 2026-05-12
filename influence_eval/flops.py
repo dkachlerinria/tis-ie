@@ -93,6 +93,44 @@ def flops_random(*, num_anchors: int, num_train: int) -> int:
     return int(num_anchors) * int(num_train)
 
 
+def flops_influcoder(
+    *,
+    num_params_total: int,
+    num_params_linear: int,
+    seq_len: int,
+    n_stock_anchors: int,
+    n_stock_pool: int,
+    proj_dim: int,
+    num_params_encoder: int,
+    num_anchors: int,
+    num_train: int,
+    emb_dim: int,
+) -> int:
+    """Influcoder: gradient stocking (LESS-style) + encoder inference.
+
+    Stocking cost: fwd+bwd on (n_stock_anchors + n_stock_pool) samples with
+    TRAK projection onto proj_dim, using all-linear target modules.
+    Encoder inference cost: forward-only for the Spearman eval set.
+    Encoder training cost is negligible vs stocking and omitted.
+    """
+    stocking = flops_less(
+        num_params_total=num_params_total,
+        num_params_lora=num_params_linear,
+        seq_len=seq_len,
+        num_anchors=n_stock_anchors,
+        num_train=n_stock_pool,
+        proj_dim=proj_dim,
+    )
+    inference = flops_embedding(
+        num_params_encoder=num_params_encoder,
+        seq_len=seq_len,
+        num_anchors=num_anchors,
+        num_train=num_train,
+        emb_dim=emb_dim,
+    )
+    return stocking + inference
+
+
 def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional[int]:
     """Dispatch helper for run_experiment.py.
 
@@ -128,6 +166,19 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional
     if method == "random":
         return flops_random(
             num_anchors=params["num_anchors"], num_train=params["num_train"]
+        )
+    if method == "influcoder":
+        return flops_influcoder(
+            num_params_total=params["grad_model_total"],
+            num_params_linear=params["grad_model_linear"],
+            seq_len=seq_len,
+            n_stock_anchors=params["n_stock_anchors"],
+            n_stock_pool=params["n_stock_pool"],
+            proj_dim=params["proj_dim"],
+            num_params_encoder=params["total"],
+            num_anchors=params["num_anchors"],
+            num_train=params["num_train"],
+            emb_dim=params["emb_dim"],
         )
     return None
 

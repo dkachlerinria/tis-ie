@@ -38,6 +38,17 @@ export RANDOM_SEED=0
 # Sequence length used for analytic FLOPS accounting (training max_seq_length)
 export FLOPS_SEQ_LEN=2048
 
+# Influcoder settings
+export INFLUCODER_PROJ_DIM=8192
+export INFLUCODER_RUN_MODE="small"
+export INFLUCODER_N_TRAIN_A=2000        # BBH eval anchors for encoder training
+export INFLUCODER_N_EVAL_A=100          # BBH eval anchors for encoder eval
+export INFLUCODER_N_TRAIN_P=2000        # Tulu pool for encoder training (start at END_INDEX)
+export INFLUCODER_N_EVAL_P=200          # Tulu pool for encoder eval (first N of Spearman range)
+
 # Output directory (model-scoped so model swaps don't collide)
 export RUN_ID="${INFLUENCE_MODEL_SLUG}_anchors${NUM_ANCHORS}_train${END_INDEX}"
 export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
+
+export INFLUCODER_DB_DIR="${INFLUENCE_OUT}/influcoder_db"
+export INFLUCODER_ENCODER_DIR="${INFLUENCE_OUT}/influcoder_encoder"

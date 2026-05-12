@@ -109,7 +109,7 @@ def main():
     p.add_argument(
         "--methods",
         nargs="+",
-        default=["less", "embedding", "random"],
+        default=["less", "embedding", "random", "influcoder"],
         help="Method names; each expects {method}_scores.pt + {method}_params.pt",
     )
     p.add_argument("--gt_name", type=str, default="ground_truth")
