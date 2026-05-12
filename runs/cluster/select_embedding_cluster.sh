@@ -17,7 +17,7 @@ source /etc/profile.d/conda.sh 2>/dev/null || source /etc/profile.d/mamba.sh 2>/
 # Install the conda env if "tis" doesn't exist
 if ! mamba env list | grep -q "^tis "; then
     echo "Creating 'tis' environment..."
-    mamba create --yes -n tis -c conda-forge -c nvidia python=3.12 cuda-toolkit=12.6
+    mamba create --yes -n tis -c conda-forge -c nvidia python=3.12 cuda-toolkit=12.8
     mamba activate tis
     echo "Installing requirements..."
     python3 -m pip install -r requirements.txt
