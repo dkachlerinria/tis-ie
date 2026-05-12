@@ -147,6 +147,11 @@ def train_with_gradient_alignment(
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
 
             try:
+                # Re-assert train mode each step: callbacks or eval passes can
+                # leave models in eval mode, which drops grad_fn on the loss.
+                target_model.train()
+                proxy_model.train()
+
                 with _sdpa_math_ctx():
                     target_outputs = target_model(**batch)
                     proxy_outputs = proxy_model(**batch)
@@ -240,8 +245,7 @@ def train_with_gradient_alignment(
 
             except Exception as e:
                 logger.error(f"[Stage 2] Epoch {epoch+1}, Step {step}, Train Error: {e}", exc_info=True)
-                if (step + 1) % gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
-                    optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad(set_to_none=True)  # always clear to avoid stale grad accumulation
                 continue
 
             # ===== Optimization =====
