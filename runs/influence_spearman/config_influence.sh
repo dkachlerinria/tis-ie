@@ -22,6 +22,10 @@ export LORA_SEED=0
 # Gradient accumulation before projection (tune down to save memory)
 export PROJECT_INTERVAL=1
 
+# Smaller LoRA for A30
+export LORA_RANK=128
+export LORA_ALPHA=512
+
 # Random baseline seed
 export RANDOM_SEED=0
 
