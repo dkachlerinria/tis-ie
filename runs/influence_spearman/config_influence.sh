@@ -14,7 +14,7 @@ export NUM_ANCHORS=100
 
 # Projection dimensions
 export GT_PROJ_DIM=65536
-export LESS_PROJ_DIM=8192
+export LESS_PROJ_DIM=16384
 
 # Fresh-LoRA seed (must be identical across GT and LESS for apples-to-apples)
 export LORA_SEED=0

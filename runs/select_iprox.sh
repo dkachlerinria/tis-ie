@@ -31,6 +31,21 @@ if [ "$FORCE_RECOMPUTE" = true ]; then
     RECOMPUTE_FLAG="--force_recompute"
 fi
 
+# Resolve "latest" checkpoint if specified
+if [ "${CKPT_STEPS}" = "latest" ]; then
+    echo "Finding latest checkpoint in ${CKPT_DIR}..."
+    LATEST_CKPT=$(ls -d ${CKPT_DIR}/checkpoint-* 2>/dev/null | sort -V | tail -n 1)
+    if [ -z "${LATEST_CKPT}" ]; then
+        echo "Error: No checkpoints found in ${CKPT_DIR}. Did you run the warmup?"
+        exit 1
+    fi
+    CKPT_STEPS=$(basename ${LATEST_CKPT} | sed 's/checkpoint-//')
+    echo "Using latest checkpoint: checkpoint-${CKPT_STEPS}"
+fi
+
+LESS_WARMUP_CKPT="${CKPT_DIR}/checkpoint-${CKPT_STEPS}"
+echo "  Warmup checkpoint: ${LESS_WARMUP_CKPT}"
+
 # Step 1: Stock Gradients (Reuse the strict 4-way partitioning from Influcoder)
 # Note: IProX trains on these gradients to align its proxy model.
 mkdir -p "${IPROX_DB_DIR}"
@@ -42,7 +57,7 @@ python influcoder/gradient_stocking.py \
     --train_dataset_name "${TRAIN_DATASET}" \
     --split train_anchors \
     --model_name "${TRAINING_MODEL}" \
-    --proj_dim 131072 \
+    --proj_dim "${PROJ_DIM}" \
     --n_samples "${N_TRAIN_ANCHORS}" \
     --start_index 0 \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
@@ -57,7 +72,7 @@ python influcoder/gradient_stocking.py \
     --train_dataset_name "${TRAIN_DATASET}" \
     --split eval_anchors \
     --model_name "${TRAINING_MODEL}" \
-    --proj_dim 131072 \
+    --proj_dim "${PROJ_DIM}" \
     --n_samples "${N_EVAL_ANCHORS}" \
     --start_index "${N_TRAIN_ANCHORS}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
@@ -72,7 +87,7 @@ python influcoder/gradient_stocking.py \
     --train_dataset_name "${TRAIN_DATASET}" \
     --split pool \
     --model_name "${TRAINING_MODEL}" \
-    --proj_dim 131072 \
+    --proj_dim "${PROJ_DIM}" \
     --n_samples "${N_TRAIN_POOL}" \
     --start_index 0 \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \
@@ -87,7 +102,7 @@ python influcoder/gradient_stocking.py \
     --train_dataset_name "${TRAIN_DATASET}" \
     --split eval_pool \
     --model_name "${TRAINING_MODEL}" \
-    --proj_dim 131072 \
+    --proj_dim "${PROJ_DIM}" \
     --n_samples "${N_EVAL_POOL}" \
     --start_index "${N_TRAIN_POOL}" \
     --load_warmup_path "${LESS_WARMUP_CKPT}" \

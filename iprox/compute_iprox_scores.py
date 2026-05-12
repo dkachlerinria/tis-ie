@@ -73,8 +73,8 @@ def load_bbh_data(data_dir, n_samples=None, start_index=0):
     return processed
 
 def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0):
-    if dataset_name == "tulu":
-        ds = load_dataset("Harvard-DCML/tulu-v2-197K-processed", split="train")
+    if "tulu" in dataset_name.lower():
+        ds = load_dataset(dataset_name, split="train")
         np.random.seed(42)
         index = np.arange(len(ds))
         np.random.shuffle(index)
@@ -88,7 +88,11 @@ def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0):
                     processed.append({"prompt": msgs[:-1], "response": msgs[-1]["content"]})
         return processed
     elif dataset_name == "bbh":
-        return load_bbh_data("data/eval", n_samples=n_samples, start_index=start_index)
+        eval_data_dir = os.environ.get("EVAL_DATA_DIR", "data/eval")
+        if not os.path.exists(os.path.join(eval_data_dir, "bbh")):
+             if os.path.exists("data/bbh"):
+                 eval_data_dir = "data"
+        return load_bbh_data(eval_data_dir, n_samples=n_samples, start_index=start_index)
     return []
 
 # ==================== IPROX SCORING LOGIC ====================
@@ -152,14 +156,13 @@ def main():
 
     # Load Model & Tokenizer
     print(f"🤖 Loading Proxy Model: {args.proxy_path}")
-    tokenizer = AutoTokenizer.from_pretrained(os.path.dirname(args.proxy_path))
+    tokenizer = AutoTokenizer.from_pretrained(args.proxy_path)
     ensure_chat_template(tokenizer)
     
     # We need a base model to initialize the structure for IPSVD
-    # For now, we assume the base model name is in the parent dir's metadata.json or we use a default
-    # Since we are in the pipeline, let's assume we can get it from the proxy_path's config
+    # For now, we assume the base model name is in the proxy_path's config
     base_model = AutoModelForCausalLM.from_pretrained(
-        os.path.dirname(args.proxy_path), 
+        args.proxy_path, 
         torch_dtype=torch.bfloat16, 
         device_map="auto"
     )
@@ -175,14 +178,16 @@ def main():
     )
     
     # Load the trained weights (the .bin file)
-    bin_file = os.path.join(os.path.dirname(args.proxy_path), "../init_pytorch_model.bin") # Default path from train script
-    # Actually, the final model is saved as final_pytorch_model.bin
-    final_bin = os.path.join(os.path.dirname(args.proxy_path), "../final_pytorch_model.bin")
+    final_bin = os.path.join(args.proxy_path, "pytorch_model.bin")
     if os.path.exists(final_bin):
         load_proxy_model(proxy_model, final_bin)
     else:
-        # Try finding it in the parent dir if not found (based on train_iprox_gradients logic)
-        load_proxy_model(proxy_model, os.path.join(args.proxy_path, "pytorch_model.bin"))
+        # Fallback to search in parent or adjacent locations if needed
+        parent_final = os.path.join(os.path.dirname(args.proxy_path), "final_pytorch_model.bin")
+        if os.path.exists(parent_final):
+            load_proxy_model(proxy_model, parent_final)
+        else:
+            raise FileNotFoundError(f"Could not find proxy weights in {args.proxy_path} or parent.")
 
     proxy_model.eval()
     for p in proxy_model.parameters():
