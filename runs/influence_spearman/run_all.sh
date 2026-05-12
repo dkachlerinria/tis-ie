@@ -24,10 +24,11 @@ bash runs/influence_spearman/compute_ground_truth.sh "$CFG"
 bash runs/influence_spearman/compute_less_scores.sh "$CFG"
 bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"
 bash runs/influence_spearman/compute_random_scores.sh "$CFG"
+bash runs/influence_spearman/compute_logra_scores.sh "$CFG"
 
 python3 -m influence_eval.run_experiment \
     --out_dir "${INFLUENCE_OUT}" \
-    --methods less embedding random \
+    --methods less embedding random logra \
     --gt_name ground_truth \
     --seq_len "${FLOPS_SEQ_LEN}"
 

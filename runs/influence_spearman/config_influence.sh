@@ -26,6 +26,10 @@ export PROJECT_INTERVAL=1
 export LORA_RANK=16
 export LORA_ALPHA=32
 
+# LoGRA settings (rank=8 matches paper default; mlp_only=true by default)
+export LOGRA_RANK=8
+export LOGRA_BATCH_SIZE=1
+
 # Random baseline seed
 export RANDOM_SEED=0
 

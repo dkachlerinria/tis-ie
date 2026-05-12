@@ -69,6 +69,25 @@ def flops_embedding(
     )
 
 
+def flops_logra(
+    *,
+    num_params_total: int,
+    num_params_logra_b: int,
+    seq_len: int,
+    num_anchors: int,
+    num_train: int,
+) -> int:
+    """LoGRA: fwd+bwd per sample (base + LoRA-A/B/C), cosine on LoRA-B grad vectors.
+
+    grad_dim = num_params_logra_b = num_lora_modules * rank^2.
+    FIM inversion cost O(n_modules * rank^6) is negligible for rank<=8.
+    """
+    per_sample = flops_forward_backward(num_params_total, seq_len)
+    return (num_anchors + num_train) * per_sample + flops_cosine_matrix(
+        num_anchors, num_train, num_params_logra_b
+    )
+
+
 def flops_random(*, num_anchors: int, num_train: int) -> int:
     # One RNG draw per cell; negligible vs the others but nonzero.
     return int(num_anchors) * int(num_train)
@@ -96,6 +115,14 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional
             num_anchors=params["num_anchors"],
             num_train=params["num_train"],
             emb_dim=params["emb_dim"],
+        )
+    if method == "logra":
+        return flops_logra(
+            num_params_total=params["total"],
+            num_params_logra_b=params["trainable"],
+            seq_len=seq_len,
+            num_anchors=params["num_anchors"],
+            num_train=params["num_train"],
         )
     if method == "random":
         return flops_random(
