@@ -8,6 +8,7 @@ if [ ! -d "data/eval/bbh" ]; then
     exit 1
 fi
 
+rm -rf "${INFLUCODER_DB_DIR}"
 mkdir -p "${INFLUCODER_DB_DIR}"
 
 # train_anchors: BBH local eval [0:N_TRAIN_A]
