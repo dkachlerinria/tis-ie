@@ -161,6 +161,9 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     logger.info(f"🔧 Initializing proxy with {args.init_method}...")
     
+    # Ensure target model has gradients for probe collection
+    target_model.requires_grad_(True)
+
     # Diagnostic: Check module names
     linear_modules = [n for n, m in target_model.named_modules() if isinstance(m, torch.nn.Linear)]
     logger.info(f"🔍 Found {len(linear_modules)} linear modules in target model.")
