@@ -28,7 +28,7 @@ bash runs/influence_spearman/compute_logra_scores.sh "$CFG"
 
 python3 -m influence_eval.run_experiment \
     --out_dir "${INFLUENCE_OUT}" \
-    --methods less embedding random logra \
+    --methods less embedding random logra_raw logra_fim \
     --gt_name ground_truth \
     --seq_len "${FLOPS_SEQ_LEN}"
 

@@ -116,7 +116,8 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional
             num_train=params["num_train"],
             emb_dim=params["emb_dim"],
         )
-    if method == "logra":
+    if method in ("logra_raw", "logra_fim"):
+        # FIM inversion cost is negligible vs fwd+bwd; both variants share FLOPS.
         return flops_logra(
             num_params_total=params["total"],
             num_params_logra_b=params["trainable"],

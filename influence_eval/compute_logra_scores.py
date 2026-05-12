@@ -36,7 +36,11 @@ def compute_logra_scores(
     logra_rank: int,
     mlp_only: bool,
     batch_size: int,
-) -> str:
+) -> None:
+    """Writes BOTH variants in one run (loads the model once):
+      - logra_raw_scores.pt: cosine on raw B-gradients (no FIM)
+      - logra_fim_scores.pt: cosine on FIM-preconditioned anchor gradients
+    """
     os.makedirs(save_dir, exist_ok=True)
 
     logra = LoGra.from_pretrained(
@@ -55,31 +59,50 @@ def compute_logra_scores(
     train_embeds = logra.encode(train_ds, batch_size=batch_size, is_test=False)
     logger.info("Train embeds shape: %s", train_embeds.shape)
 
-    logger.info("Encoding %d anchors (FIM-preconditioned)...", len(anchor_ds))
-    anchor_embeds = logra.encode(anchor_ds, batch_size=batch_size, is_test=True)
-    logger.info("Anchor embeds shape: %s", anchor_embeds.shape)
+    # Save training FIM before anchor encoding overwrites it
+    train_fim = logra.fim
 
-    sim = logra.similarity(anchor_embeds, train_embeds, mode="cosine")
-    scores = torch.from_numpy(sim).float()
+    logger.info("Encoding %d anchors (raw, is_test=False)...", len(anchor_ds))
+    raw_anchor_embeds = logra.encode(anchor_ds, batch_size=batch_size, is_test=False)
+    logger.info("Raw anchor embeds shape: %s", raw_anchor_embeds.shape)
 
-    out_path = os.path.join(save_dir, "logra_scores.pt")
-    torch.save(scores, out_path)
-    logger.info("Saved logra scores: %s shape=%s", out_path, tuple(scores.shape))
+    # Restore training FIM, apply preconditioning to get the FIM variant
+    logra.fim = train_fim
+    precond_anchor_embeds = (
+        logra._precondition(torch.from_numpy(raw_anchor_embeds))
+        .float()
+        .numpy()
+    )
+    logger.info("FIM-preconditioned anchor embeds shape: %s", precond_anchor_embeds.shape)
+
+    logger.info("Computing logra_raw scores (no FIM)...")
+    raw_sim = logra.similarity(raw_anchor_embeds, train_embeds, mode="cosine")
+    raw_scores = torch.from_numpy(raw_sim).float()
+
+    logger.info("Computing logra_fim scores (FIM-preconditioned)...")
+    fim_sim = logra.similarity(precond_anchor_embeds, train_embeds, mode="cosine")
+    fim_scores = torch.from_numpy(fim_sim).float()
+
+    raw_path = os.path.join(save_dir, "logra_raw_scores.pt")
+    fim_path = os.path.join(save_dir, "logra_fim_scores.pt")
+    torch.save(raw_scores, raw_path)
+    torch.save(fim_scores, fim_path)
+    logger.info("Saved %s shape=%s", raw_path, tuple(raw_scores.shape))
+    logger.info("Saved %s shape=%s", fim_path, tuple(fim_scores.shape))
 
     total = sum(p.numel() for p in logra.model.parameters())
     trainable = sum(p.numel() for p in logra.model.parameters() if p.requires_grad)
     params = {
         "total": total,
         "trainable": trainable,
-        "num_anchors": int(scores.shape[0]),
-        "num_train": int(scores.shape[1]),
+        "num_anchors": int(raw_scores.shape[0]),
+        "num_train": int(raw_scores.shape[1]),
         "model_name": model_name,
     }
-    params_path = os.path.join(save_dir, "logra_params.pt")
-    torch.save(params, params_path)
-    logger.info("Saved logra params: %s", params_path)
-
-    return out_path
+    # Same params metadata applies to both variants
+    torch.save(params, os.path.join(save_dir, "logra_raw_params.pt"))
+    torch.save(params, os.path.join(save_dir, "logra_fim_params.pt"))
+    logger.info("Saved params for both variants")
 
 
 def parse_args():
