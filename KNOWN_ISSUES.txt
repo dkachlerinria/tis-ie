@@ -1,21 +1,35 @@
 KNOWN ISSUES
 ============
 
-SDPA attention is pinned for FLOP-measurement reproducibility
--------------------------------------------------------------
+Eager attention is pinned for FLOP-measurement reproducibility (and GQA support)
+------------------------------------------------------------------------------
 `influence_eval/model_utils.py:load_base_with_fresh_lora` forces
-`attn_implementation="sdpa"` when loading any HF causal LM for the
+`attn_implementation="eager"` when loading any HF causal LM for the
 influence-Spearman pipeline.
 
-Why: measured FLOPs from `torch.utils.flop_counter.FlopCounterMode` are
-dispatch-based, so the count depends on which attention kernel actually
-runs (eager vs sdpa vs flash). Pinning SDPA makes the FLOPs column in
-`results.json` reproducible across machines with different default
-attention backends.
+Why (two reasons, same fix):
 
-Risk: if a future HF model architecture lacks SDPA support (or has a
-buggy SDPA path), loading will fail or produce incorrect outputs. In
-that case, fall back to `attn_implementation="eager"` in
-`load_base_with_fresh_lora` and RE-MEASURE all FLOPs from scratch —
-mixing measurements taken under different attention backends will not
-compare meaningfully.
+1. **FLOP-counter / GQA bug.** `torch.utils.flop_counter.FlopCounterMode` has
+   an SDPA handler that asserts `h_Q == h_K == h_V` (Q/K/V share head count).
+   For Grouped Query Attention models (Qwen3, Llama-3, most modern LMs), Q has
+   more heads than K/V, so the assertion fires:
+
+       File ".../torch/utils/flop_counter.py", line 268, in sdpa_flop_count
+           assert b == _b2 == _b3 and h == _h2 == _h3 ...
+       AssertionError
+
+   "eager" attention computes attention as plain matmul ops (Q @ K.T → softmax
+   → @ V), which the flop counter handles cleanly. Same accuracy, no crash.
+
+2. **Cross-hardware reproducibility.** `FlopCounterMode` is dispatch-based, so
+   the count depends on which attention kernel actually runs (eager vs sdpa vs
+   flash-attn). Pinning "eager" gives the same count on every machine.
+
+Trade-off: eager attention is slower than SDPA. We care about FLOP correctness,
+not wall-time during the eval pipeline. The encoder-training and SFT pipelines
+(not under FlopCounterMode) are unaffected.
+
+If "eager" breaks for a future model arch, the next reasonable fallback is
+"sdpa" PLUS a `FlopCounterMode` patch (or filter out SDPA ops from counting and
+add them analytically). Numbers from a different attention backend should not
+be mixed with prior runs.

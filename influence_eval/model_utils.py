@@ -33,10 +33,12 @@ def load_base_with_fresh_lora(
     seed: int = 0,
     torch_dtype: Any = torch.bfloat16,
 ) -> PeftModel:
-    # attn_implementation="sdpa" pinned for FLOP-measurement reproducibility.
-    # See KNOWN_ISSUES.txt for rationale and fallback if SDPA breaks.
+    # attn_implementation="eager" pinned for FLOP-measurement reproducibility
+    # AND because torch.utils.flop_counter's SDPA handler crashes on GQA models
+    # (asserts Q/K/V have equal head counts; Qwen3 etc. have fewer K/V heads).
+    # See KNOWN_ISSUES.txt for details.
     base_model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch_dtype, attn_implementation="sdpa"
+        model_name, torch_dtype=torch_dtype, attn_implementation="eager"
     )
     base_model.to("cuda")
 
