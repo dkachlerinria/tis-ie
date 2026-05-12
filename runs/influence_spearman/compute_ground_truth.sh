@@ -7,7 +7,7 @@ source "$CFG"
 mkdir -p "$INFLUENCE_OUT"
 
 python3 -m influence_eval.compute_gradient_scores \
-    --model_name "${TRAINING_MODEL}" \
+    --model_name "${INFLUENCE_MODEL}" \
     --save_dir "${INFLUENCE_OUT}" \
     --out_name "ground_truth" \
     --end_index "${END_INDEX}" \

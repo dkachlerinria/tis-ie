@@ -5,6 +5,11 @@
 
 source runs/config.sh
 
+# Model for influence calculations (can differ from TRAINING_MODEL for SFT).
+# Defaults to TRAINING_MODEL for backward compat; override to validate on smaller model.
+export INFLUENCE_MODEL="${INFLUENCE_MODEL:-${TRAINING_MODEL}}"
+INFLUENCE_MODEL_SLUG=$(echo "${INFLUENCE_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
+
 # Anchor count (BBH dev split sliced [0:NUM_ANCHORS])
 export NUM_ANCHORS=100
 
@@ -22,5 +27,5 @@ export RANDOM_SEED=0
 export FLOPS_SEQ_LEN=2048
 
 # Output directory (model-scoped so model swaps don't collide)
-export RUN_ID="${MODEL_SLUG}_anchors${NUM_ANCHORS}_train${END_INDEX}"
+export RUN_ID="${INFLUENCE_MODEL_SLUG}_anchors${NUM_ANCHORS}_train${END_INDEX}"
 export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"

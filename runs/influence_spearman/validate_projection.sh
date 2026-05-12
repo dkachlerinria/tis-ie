@@ -9,7 +9,7 @@ VAL_OUT="${INFLUENCE_OUT}/projection_validation"
 mkdir -p "$VAL_OUT"
 
 python3 -m influence_eval.validate_projection \
-    --model_name "${TRAINING_MODEL}" \
+    --model_name "${INFLUENCE_MODEL}" \
     --save_dir "${VAL_OUT}" \
     --end_index 50 \
     --num_anchors 10 \
