@@ -168,14 +168,24 @@ def train_with_gradient_alignment(
                 l_target, t_logits = _supervised_loss(target_outputs, batch)
                 l_surr,   p_logits = _supervised_loss(proxy_outputs, batch)
 
-                # Diagnostic: if l_target has no grad_fn, autograd_grad below
-                # will fail with a cryptic error. Surface the real cause here.
-                if not l_target.requires_grad:
+                # Diagnostic: autograd_grad below requires l_target to be a
+                # non-leaf tensor with a grad_fn. Surface the real cause if
+                # either condition fails.
+                if l_target.grad_fn is None:
                     n_req = sum(int(w.requires_grad) for w in t_weights)
+                    sample_status = ", ".join(
+                        f"{i}: req={int(w.requires_grad)}/leaf={int(w.is_leaf)}"
+                        for i, w in enumerate(t_weights[:3])
+                    )
                     raise RuntimeError(
-                        f"target loss has no grad_fn. "
+                        f"l_target has no grad_fn (cannot backprop). "
+                        f"l_target.requires_grad={l_target.requires_grad}, "
+                        f"l_target.is_leaf={l_target.is_leaf}, "
+                        f"l_target.dtype={l_target.dtype}. "
                         f"t_weights with requires_grad=True: {n_req}/{len(t_weights)}. "
-                        f"Some upstream code disabled grads on the tracked layers."
+                        f"First few t_weights: [{sample_status}]. "
+                        f"Likely cause: target_model forward was wrapped in no_grad/inference_mode "
+                        f"by Accelerate hooks (device_map='auto') or a callback."
                     )
 
                 # ===== target mode gradients =====
