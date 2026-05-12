@@ -12,6 +12,9 @@ This script:
 """
 
 import os
+# Must be set BEFORE torch imports / CUDA init.
+# Reduces fragmentation OOMs during long Stage-2 runs.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import sys
 import shutil
 

@@ -131,6 +131,32 @@ def flops_influcoder(
     return stocking + inference
 
 
+def flops_airrep(
+    *,
+    num_params_encoder: int,
+    seq_len: int,
+    num_anchors: int,
+    num_train: int,
+    emb_dim: int,
+) -> int:
+    """AirRep: SFT (stage 2) + encoder training (stage 3) + encoder inference (this).
+
+    Analytic estimate is only used when `measured_flops` is missing. The primary
+    path is the sum of per-phase `flop_counter()` measurements persisted in
+    `sft_flops`/`training_flops`/`inference_flops`. Here we conservatively
+    return just the inference cost (encoder fwd-only over anchors+train pool +
+    cosine matrix), since the SFT/training costs depend on the dataset+model
+    config used by the run, which params.pt doesn't carry analytically.
+    """
+    return flops_embedding(
+        num_params_encoder=num_params_encoder,
+        seq_len=seq_len,
+        num_anchors=num_anchors,
+        num_train=num_train,
+        emb_dim=emb_dim,
+    )
+
+
 def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional[int]:
     """Dispatch helper for run_experiment.py.
 
@@ -170,6 +196,14 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional
     if method == "random":
         return flops_random(
             num_anchors=params["num_anchors"], num_train=params["num_train"]
+        )
+    if method == "airrep":
+        return flops_airrep(
+            num_params_encoder=params["total"],
+            seq_len=seq_len,
+            num_anchors=params["num_anchors"],
+            num_train=params["num_train"],
+            emb_dim=params["emb_dim"],
         )
     if method == "influcoder":
         return flops_influcoder(

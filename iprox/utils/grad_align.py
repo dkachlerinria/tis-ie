@@ -272,6 +272,14 @@ def train_with_gradient_alignment(
                 epoch_kd_loss    += float(l_kd.detach())
                 batches_cnt      += 1
 
+                # Free intermediate tensors before the next step. create_graph=True
+                # on the proxy + gradient checkpointing leaves higher-order subgraphs
+                # that don't fully release until references go out of scope.
+                del t_grads, p_grads, gA_p_list, gB_p_list, t_logits, p_logits
+                del l_target, l_surr, l_align, l_kd, loss_total
+                if step % 50 == 0:
+                    torch.cuda.empty_cache()
+
             except Exception as e:
                 logger.error(f"[Stage 2] Epoch {epoch+1}, Step {step}, Train Error: {e}", exc_info=True)
                 optimizer.zero_grad(set_to_none=True)  # always clear to avoid stale grad accumulation
