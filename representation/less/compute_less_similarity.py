@@ -91,7 +91,7 @@ def get_dev_grads(
     )
     if os.path.exists(dev_grads_path):
         logger.info("Loading dev gradients from %s", dev_grads_path)
-        dev_grads = torch.load(dev_grads_path)
+        dev_grads = torch.load(dev_grads_path, map_location="cpu")
         return dev_grads
 
     raise FileNotFoundError(f"Dev gradients file {dev_grads_path} not found.")
@@ -230,9 +230,8 @@ if __name__ == "__main__":
             normalize=False,  # already normalized when saving
         )
 
-        # move avg_lr to the same device as out
-        avg_lr_t = torch.tensor(avg_lr, device=device)
-        inf_matrix += avg_lr_t * out
+        # move out to the same device as inf_matrix
+        inf_matrix += avg_lr * out.to(device)
         logger.info("Completed epoch %d", t)
 
     # move to numpy and save as {dev_dataset_name}_cossim.npy
