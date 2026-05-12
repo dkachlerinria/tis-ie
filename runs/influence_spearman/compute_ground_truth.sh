@@ -18,4 +18,5 @@ python3 -m influence_eval.compute_gradient_scores \
     --lora_rank "${LORA_RANK}" \
     --lora_alpha "${LORA_ALPHA}" \
     --lora_dropout "${LORA_DROPOUT}" \
-    --lora_seed "${LORA_SEED}"
+    --lora_seed "${LORA_SEED}" \
+    --project_interval "${PROJECT_INTERVAL}"

@@ -19,6 +19,9 @@ export LESS_PROJ_DIM=8192
 # Fresh-LoRA seed (must be identical across GT and LESS for apples-to-apples)
 export LORA_SEED=0
 
+# Gradient accumulation before projection (tune down to save memory)
+export PROJECT_INTERVAL=1
+
 # Random baseline seed
 export RANDOM_SEED=0
 
