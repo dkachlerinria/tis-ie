@@ -74,6 +74,7 @@ os.environ["WANDB_DISABLED"] = "true"
 MODES = {
     'tiny':   {'train_a': 3,    'eval_a': 2,    'train_p': 5,    'eval_p': 3,    'epochs': 1},
     'quick':  {'train_a': 100,  'eval_a': 100,  'train_p': 200,  'eval_p': 200,  'epochs': 2},
+    'small':  {'train_a': 2000, 'eval_a': 50,   'train_p': 4000, 'eval_p': 100,  'epochs': 1},
     'medium': {'train_a': 2000, 'eval_a': 500,  'train_p': 6000, 'eval_p': 1000,  'epochs': 2},
     'full':   {'train_a': 4000, 'eval_a': 1000, 'train_p': 16000, 'eval_p': 4000, 'epochs': 2}
 }
