@@ -406,7 +406,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train IProX proxy and evaluate on gradient similarity')
     
     # Data args
-    parser.add_argument('--run_mode', type=str, default="quick", choices=['tiny', 'quick', 'medium', 'full'])
+    parser.add_argument('--run_mode', type=str, default="quick", choices=['tiny', 'quick', 'small', 'medium', 'full'])
     parser.add_argument('--anchor_train_db', type=str, required=True, help='Path to train anchor SQLite database')
     parser.add_argument('--anchor_eval_db', type=str, required=True, help='Path to eval anchor SQLite database')
     parser.add_argument('--pool_train_db', type=str, required=True, help='Path to train pool SQLite database')
