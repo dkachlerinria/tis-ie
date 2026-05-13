@@ -12,14 +12,15 @@ mkdir -p "${IPROX_PROXY_DIR}"
 
 echo "🚀 Training IProX Proxy (Mode: ${INFLUCODER_RUN_MODE})..."
 
-python iprox/train_iprox_gradients.py \
-    --run_mode "${INFLUCODER_RUN_MODE}" \
-    --anchor_train_db "${INFLUCODER_DB_DIR}/train_anchors.sqlite" \
-    --anchor_eval_db  "${INFLUCODER_DB_DIR}/eval_anchors.sqlite" \
-    --pool_train_db   "${INFLUCODER_DB_DIR}/pool.sqlite" \
-    --pool_eval_db    "${INFLUCODER_DB_DIR}/eval_pool.sqlite" \
+python iprox/train_iprox.py \
     --target_model    "${INFLUENCE_MODEL}" \
+    --benchmark       "${BENCHMARK}" \
+    --train_dataset   "${TRAIN_DATASET}" \
+    --n_train_a       "${INFLUCODER_N_TRAIN_A}" \
+    --n_train_p       "${INFLUCODER_N_TRAIN_P}" \
+    --end_index       "${END_INDEX}" \
     --sparsity        0.5 \
+    --epochs          1 \
     --output_dir      "${IPROX_PROXY_DIR}" \
     --gradient_accumulation_steps "${GRAD_ACC}" \
     --lr              1e-4 \
