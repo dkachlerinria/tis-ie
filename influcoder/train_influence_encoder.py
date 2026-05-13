@@ -266,17 +266,20 @@ def quick_eval_native(encoder, eval_anchors_text, eval_text, true_scores_eval, a
 # =========================================================================
 
 class InBatchLoss(nn.Module):
-    """Hybrid loss: Pearson correlation + MSE.
+    """Hybrid loss: Pearson correlation + KL-Divergence (Listwise Ranking).
 
-    Optimising Pearson r directly matches the Spearman rank-correlation
-    evaluation metric. MSE is added to provide a stable scale anchor.
+    Optimising Pearson r helps global alignment, while KL-Div over the softmax
+    of scores acts as a continuous InfoNCE loss, heavily optimizing the ranking
+    of the top candidates per anchor.
     """
 
-    def __init__(self, alpha=0.9):
+    def __init__(self, alpha=0.5, temperature=0.05):
         super().__init__()
         self.alpha = alpha
+        self.temperature = temperature
 
     def forward(self, scores, labels):
+        # 1. Pearson Correlation Loss
         s_flat = scores.view(-1)
         l_flat = labels.view(-1)
         s_cent = s_flat - s_flat.mean()
@@ -286,9 +289,13 @@ class InBatchLoss(nn.Module):
         l_std = torch.sqrt((l_cent ** 2).sum() + 1e-8)
         pearson_loss = 1.0 - (cov / (s_std * l_std))
 
-        l_standardized = l_cent / (l_std / s_std.detach() + 1e-8) + s_flat.mean().detach()
-        mse_loss = F.mse_loss(s_flat, l_standardized)
-        return self.alpha * pearson_loss + (1 - self.alpha) * mse_loss
+        # 2. KL-Divergence Loss (Listwise continuous ranking)
+        # We compute softmax over the candidates dimension (dim=1)
+        pred_logp = F.log_softmax(scores / self.temperature, dim=1)
+        true_p = F.softmax(labels / self.temperature, dim=1)
+        kl_loss = F.kl_div(pred_logp, true_p, reduction='batchmean')
+
+        return self.alpha * pearson_loss + (1 - self.alpha) * kl_loss
 
 class AnchorBatchGenerator:
     def __init__(self, anchor_texts, pool_texts, true_scores, k_anchors=8, m_candidates=64, hard_ratio=0.5, seed=42):
@@ -379,15 +386,16 @@ if __name__ == "__main__":
     parser.add_argument('--pool_eval_db', type=str, required=True)
     parser.add_argument('--gradient_seed', type=int, default=42)
     parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--n_candidates_per_batch', type=int, default=20)
-    parser.add_argument('--hard_ratio', type=float, default=0.2)
+    parser.add_argument('--n_candidates_per_batch', type=int, default=64)
+    parser.add_argument('--hard_ratio', type=float, default=0.5)
     parser.add_argument('--agg_mode', type=str, default='mean', choices=['mean', 'max'])
     parser.add_argument('--grad_accum_steps', type=int, default=4)
     parser.add_argument('--epochs', type=int, default=None)
-    parser.add_argument('--lr', type=float, default=2e-4)
+    parser.add_argument('--lr', type=float, default=5e-5)
     parser.add_argument('--weight_decay', type=float, default=0.01)
-    parser.add_argument('--alpha', type=float, default=0.9, help="Weight for Pearson loss (1-alpha for MSE)")
+    parser.add_argument('--alpha', type=float, default=0.5, help="Weight for Pearson loss (1-alpha for KL-Div)")
     parser.add_argument('--output_dir', type=str, default="./checkpoints/influence_encoder")
+
     
     args = parser.parse_args()
     cfg = MODES[args.run_mode]
