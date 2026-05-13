@@ -26,7 +26,7 @@ bash runs/influence_spearman/compute_less_scores.sh "$CFG"
 bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"
 bash runs/influence_spearman/compute_random_scores.sh "$CFG"
 bash runs/influence_spearman/compute_logra_scores.sh "$CFG"
-bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"
+#bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"
 
 python3 -m influence_eval.run_experiment \
     --out_dir "${INFLUENCE_OUT}" \
