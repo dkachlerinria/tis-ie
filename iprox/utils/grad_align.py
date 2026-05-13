@@ -253,6 +253,9 @@ def train_with_gradient_alignment(
                         l_kd = l_kd + (_kl * tok_mask[:, _s:_e]).sum() / valid
                         del _t, _p, _kl
                     l_kd = l_kd * (temperature ** 2)
+                    # t_logits_detached is only used in the KD loop above (detached,
+                    # not part of any grad graph); free it now (~312 MB float32).
+                    del t_logits_detached
 
                     # Backward pass (recomputes proxy graph using MATH)
                     loss_total = l_align + lambda_anchor * l_kd
@@ -271,7 +274,7 @@ def train_with_gradient_alignment(
                 # after the target-model pass; only the proxy-pass variables remain.
                 del p_grads, gA_p_list, gB_p_list, p_logits
                 del l_surr, l_align, l_kd, loss_total
-                del t_logits_detached, t_grads_detached
+                # t_grads_detached and t_logits_detached already freed inline above.
                 # create_graph=True leaves a deeply nested autograd graph that
                 # CPython's ref-counter may not fully break every step. gc.collect()
                 # breaks any remaining cycles, then empty_cache() returns the freed
