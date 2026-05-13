@@ -266,17 +266,18 @@ def quick_eval_native(encoder, eval_anchors_text, eval_text, true_scores_eval, a
 # =========================================================================
 
 class InBatchLoss(nn.Module):
-    """Hybrid loss: Pearson correlation + KL-Divergence (Listwise Ranking).
+    """Hybrid loss: Pearson correlation + [KL-Divergence or MSE].
 
-    Optimising Pearson r helps global alignment, while KL-Div over the softmax
-    of scores acts as a continuous InfoNCE loss, heavily optimizing the ranking
-    of the top candidates per anchor.
+    Optimising Pearson r helps global alignment. 
+    - 'kl' mode (default) adds listwise ranking via KL-Divergence.
+    - 'mse' mode adds scale alignment via MSE (ablation).
     """
 
-    def __init__(self, alpha=0.5, temperature=0.05):
+    def __init__(self, alpha=0.5, temperature=0.05, mode='kl'):
         super().__init__()
         self.alpha = alpha
         self.temperature = temperature
+        self.mode = mode
 
     def forward(self, scores, labels):
         # 1. Pearson Correlation Loss
@@ -289,13 +290,18 @@ class InBatchLoss(nn.Module):
         l_std = torch.sqrt((l_cent ** 2).sum() + 1e-8)
         pearson_loss = 1.0 - (cov / (s_std * l_std))
 
-        # 2. KL-Divergence Loss (Listwise continuous ranking)
-        # We compute softmax over the candidates dimension (dim=1)
-        pred_logp = F.log_softmax(scores / self.temperature, dim=1)
-        true_p = F.softmax(labels / self.temperature, dim=1)
-        kl_loss = F.kl_div(pred_logp, true_p, reduction='batchmean')
+        if self.mode == 'kl':
+            # 2a. KL-Divergence Loss (Listwise continuous ranking)
+            pred_logp = F.log_softmax(scores / self.temperature, dim=1)
+            true_p = F.softmax(labels / self.temperature, dim=1)
+            second_loss = F.kl_div(pred_logp, true_p, reduction='batchmean')
+        else:
+            # 2b. MSE Loss (Ablation)
+            # Standardize labels to match score scale for MSE stability
+            l_standardized = l_cent / (l_std / s_std.detach() + 1e-8) + s_flat.mean().detach()
+            second_loss = F.mse_loss(s_flat, l_standardized)
 
-        return self.alpha * pearson_loss + (1 - self.alpha) * kl_loss
+        return self.alpha * pearson_loss + (1 - self.alpha) * second_loss
 
 class AnchorBatchGenerator:
     def __init__(self, anchor_texts, pool_texts, true_scores, k_anchors=8, m_candidates=64, hard_ratio=0.5, seed=42):
@@ -393,7 +399,8 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--lr', type=float, default=5e-5)
     parser.add_argument('--weight_decay', type=float, default=0.01)
-    parser.add_argument('--alpha', type=float, default=0.5, help="Weight for Pearson loss (1-alpha for KL-Div)")
+    parser.add_argument('--alpha', type=float, default=0.5, help="Weight for Pearson loss (1-alpha for secondary loss)")
+    parser.add_argument('--loss_mode', type=str, default='kl', choices=['kl', 'mse'], help="Secondary loss: 'kl' (ranking) or 'mse' (ablation)")
     parser.add_argument('--output_dir', type=str, default="./checkpoints/influence_encoder")
 
     
@@ -476,7 +483,7 @@ if __name__ == "__main__":
     enc = SentenceTransformer(args.encoder_model, device=device)
     enc.max_seq_length = 1024  # data is filtered to 512 Qwen tokens; 1024 is a safe ceiling for the encoder's own tokenizer
     enc.train()
-    loss_fn = InBatchLoss(alpha=args.alpha)
+    loss_fn = InBatchLoss(alpha=args.alpha, mode=args.loss_mode)
     optimizer = torch.optim.AdamW(enc.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
     n_batches = (len(train_anchors_text) + args.batch_size - 1) // args.batch_size
