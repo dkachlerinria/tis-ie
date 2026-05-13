@@ -386,7 +386,7 @@ if __name__ == "__main__":
     parser.add_argument('--pool_eval_db', type=str, required=True)
     parser.add_argument('--gradient_seed', type=int, default=42)
     parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--n_candidates_per_batch', type=int, default=20)
+    parser.add_argument('--n_candidates_per_batch', type=int, default=15)
     parser.add_argument('--hard_ratio', type=float, default=0.2)
     parser.add_argument('--agg_mode', type=str, default='mean', choices=['mean', 'max'])
     parser.add_argument('--grad_accum_steps', type=int, default=4)
