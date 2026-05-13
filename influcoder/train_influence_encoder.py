@@ -480,30 +480,45 @@ if __name__ == "__main__":
     train_loss_avg = RunningAverage()
     global_batch_idx = 0
 
-    flop_ctx = flop_counter()
-    counter = flop_ctx.__enter__()
+    training_total_flops = 0
     for epoch in range(epochs):
         gen = AnchorBatchGenerator(train_anchors_text, train_text, true_scores_train,
                                    args.batch_size, args.n_candidates_per_batch,
                                    args.hard_ratio, seed=42+epoch)
         pbar = tqdm(gen, desc=f"Epoch {epoch+1}/{epochs}", total=n_batches)
-        for batch_idx, (a_text, c_text, labels) in enumerate(pbar):
-            tokenized_a = enc.tokenizer(a_text, padding=True, truncation=True, max_length=enc.max_seq_length, return_tensors="pt").to(device)
-            tokenized_c = enc.tokenizer(c_text, padding=True, truncation=True, max_length=enc.max_seq_length, return_tensors="pt").to(device)
 
-            with torch.amp.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
-                a_embs = F.normalize(enc(tokenized_a)['sentence_embedding'], p=2, dim=1)
-                c_embs = F.normalize(enc(tokenized_c)['sentence_embedding'], p=2, dim=1)
-                loss = loss_fn(torch.mm(a_embs, c_embs.T), labels.to(device)) / args.grad_accum_steps
+        with flop_counter() as epoch_counter:
+            for batch_idx, (a_text, c_text, labels) in enumerate(pbar):
+                tokenized_a = enc.tokenizer(a_text, padding=True, truncation=True, max_length=enc.max_seq_length, return_tensors="pt").to(device)
+                tokenized_c = enc.tokenizer(c_text, padding=True, truncation=True, max_length=enc.max_seq_length, return_tensors="pt").to(device)
 
-            scaler.scale(loss).backward()
-            train_loss_avg.update(loss.item() * args.grad_accum_steps)
-            global_batch_idx += 1
+                with torch.amp.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
+                    a_embs = F.normalize(enc(tokenized_a)['sentence_embedding'], p=2, dim=1)
+                    c_embs = F.normalize(enc(tokenized_c)['sentence_embedding'], p=2, dim=1)
+                    loss = loss_fn(torch.mm(a_embs, c_embs.T), labels.to(device)) / args.grad_accum_steps
 
-            # Free intermediate tensors immediately to prevent memory accumulation
-            del tokenized_a, tokenized_c, a_embs, c_embs, loss
+                scaler.scale(loss).backward()
+                train_loss_avg.update(loss.item() * args.grad_accum_steps)
+                global_batch_idx += 1
 
-            if global_batch_idx % args.grad_accum_steps == 0:
+                # Free intermediate tensors immediately to prevent memory accumulation
+                del tokenized_a, tokenized_c, a_embs, c_embs, loss
+
+                if global_batch_idx % args.grad_accum_steps == 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(enc.parameters(), 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                    scheduler.step()
+                    optimizer.zero_grad()
+
+                # Periodically flush the CUDA allocator cache
+                if global_batch_idx % 50 == 0:
+                    torch.cuda.empty_cache()
+
+                pbar.set_postfix(ema_loss=f"{train_loss_avg.ema():.4f}")
+
+            if global_batch_idx % args.grad_accum_steps != 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(enc.parameters(), 1.0)
                 scaler.step(optimizer)
@@ -511,23 +526,11 @@ if __name__ == "__main__":
                 scheduler.step()
                 optimizer.zero_grad()
 
-            # Periodically flush the CUDA allocator cache
-            if global_batch_idx % 50 == 0:
-                torch.cuda.empty_cache()
+        training_total_flops += int(epoch_counter.get_total_flops())
 
-            pbar.set_postfix(ema_loss=f"{train_loss_avg.ema():.4f}")
-
-        if global_batch_idx % args.grad_accum_steps != 0:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(enc.parameters(), 1.0)
-            scaler.step(optimizer)
-            scaler.update()
-            scheduler.step()
-            optimizer.zero_grad()
-
-        # Quick Epoch Eval
-        ev = quick_eval_native(enc, eval_anchors_text[:50], eval_text[:200], true_scores_eval[:50, :200], 
-                               args.agg_mode, loss_fn, device, 
+        # Quick Epoch Eval (not counted toward training FLOPs)
+        ev = quick_eval_native(enc, eval_anchors_text[:50], eval_text[:200], true_scores_eval[:50, :200],
+                               args.agg_mode, loss_fn, device,
                                batch_size=args.batch_size, n_candidates=args.n_candidates_per_batch)
         print(f"\n   [Epoch {epoch+1}] Loss - Train: {train_loss_avg.ema():.4f} | Eval: {ev['loss']:.4f}")
         print(f"   [Epoch {epoch+1}] Eval Spearman - Agg ρ: {ev['agg_spearman']:.4f} | PA ρ: {ev['per_anchor_mean']:.4f}")
@@ -536,7 +539,9 @@ if __name__ == "__main__":
         gc.collect()
         torch.cuda.empty_cache()
 
-    # 3. Final Evaluation
+    training_flops = training_total_flops
+
+    # 3. Final Evaluation (not counted toward training FLOPs)
     print("\n" + "=" * 70 + "\n🏁 FINAL EVALUATION\n" + "=" * 70)
     enc.eval()
     with torch.inference_mode():
@@ -551,8 +556,6 @@ if __name__ == "__main__":
         zb_e = base_enc.encode(eval_text, normalize_embeddings=True, convert_to_numpy=True, batch_size=32)
         base_metrics = compute_native_metrics(true_scores_eval, zb_a @ zb_e.T, agg_mode=args.agg_mode)
 
-    training_flops = int(counter.get_total_flops())
-    flop_ctx.__exit__(None, None, None)
     flops_path = os.path.join(args.output_dir, "_flops.json")
     save_phase_flops(flops_path, training_flops)
     print(f"   📊 Training FLOPs: {training_flops:.3e}  ({flops_path})")
