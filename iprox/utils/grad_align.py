@@ -161,8 +161,8 @@ def train_with_gradient_alignment(
                     if not w.requires_grad:
                         w.requires_grad_(True)
 
+                target_outputs = target_model(**batch)
                 with _sdpa_math_ctx():
-                    target_outputs = target_model(**batch)
                     proxy_outputs = proxy_model(**batch)
 
                 l_target, t_logits = _supervised_loss(target_outputs, batch)
