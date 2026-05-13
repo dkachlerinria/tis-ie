@@ -157,18 +157,21 @@ def flops_airrep(
     )
 
 
-def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional[int]:
+def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> dict:
     """Dispatch helper for run_experiment.py.
 
-    Prefers `params["measured_flops"]` (set by compute_*_scores.py wrapping
-    workload in FlopCounterMode). Falls back to analytic formulas below for
-    backward compatibility with old params dicts.
+    Returns a dict: {"total": int, "inference": int}
     """
+    out = {"total": 0, "inference": 0}
+
+    # Prefer measured flops if present
     if "measured_flops" in params and params["measured_flops"] is not None:
-        return int(params["measured_flops"])
+        out["total"] = int(params["measured_flops"])
+        out["inference"] = int(params.get("inference_flops", out["total"]))
+        return out
 
     if method in ("ground_truth", "less"):
-        return flops_less(
+        val = flops_less(
             num_params_total=params["total"],
             num_params_lora=params["trainable"],
             seq_len=seq_len,
@@ -176,37 +179,50 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional
             num_train=params["num_train"],
             proj_dim=params["proj_dim"],
         )
-    if method == "embedding":
-        return flops_embedding(
+        out["total"] = out["inference"] = int(val)
+    elif method == "embedding":
+        val = flops_embedding(
             num_params_encoder=params["total"],
             seq_len=seq_len,
             num_anchors=params["num_anchors"],
             num_train=params["num_train"],
             emb_dim=params["emb_dim"],
         )
-    if method in ("logra_raw", "logra_fim"):
-        # FIM inversion cost is negligible vs fwd+bwd; both variants share FLOPS.
-        return flops_logra(
+        out["total"] = out["inference"] = int(val)
+    elif method in ("logra_raw", "logra_fim"):
+        val = flops_logra(
             num_params_total=params["total"],
             num_params_logra_b=params["trainable"],
             seq_len=seq_len,
             num_anchors=params["num_anchors"],
             num_train=params["num_train"],
         )
-    if method == "random":
-        return flops_random(
+        out["total"] = out["inference"] = int(val)
+    elif method == "random":
+        val = flops_random(
             num_anchors=params["num_anchors"], num_train=params["num_train"]
         )
-    if method == "airrep":
-        return flops_airrep(
+        out["total"] = out["inference"] = int(val)
+    elif method == "airrep":
+        val = flops_airrep(
             num_params_encoder=params["total"],
             seq_len=seq_len,
             num_anchors=params["num_anchors"],
             num_train=params["num_train"],
             emb_dim=params["emb_dim"],
         )
-    if method == "influcoder":
-        return flops_influcoder(
+        out["total"] = out["inference"] = int(val)
+    elif method == "influcoder":
+        # Total = Stocking + Inference
+        # Inference = Encoder inference on anchors + pool
+        inf = flops_embedding(
+            num_params_encoder=params["total"],
+            seq_len=seq_len,
+            num_anchors=params["num_anchors"],
+            num_train=params["num_train"],
+            emb_dim=params["emb_dim"],
+        )
+        tot = flops_influcoder(
             num_params_total=params["grad_model_total"],
             num_params_linear=params["grad_model_linear"],
             seq_len=seq_len,
@@ -218,7 +234,9 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> Optional
             num_train=params["num_train"],
             emb_dim=params["emb_dim"],
         )
-    return None
+        out["total"], out["inference"] = int(tot), int(inf)
+
+    return out
 
 
 def _profiler_sanity_check(model_name: str, seq_len: int = 512):

@@ -34,16 +34,19 @@ def _load(out_dir: str, name: str):
 
 def _markdown_table(results: dict) -> str:
     lines = [
-        "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) | FLOPS |",
-        "|---|---|---|---|---|---|",
+        "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) | Total FLOPS | Inf. FLOPS |",
+        "|---|---|---|---|---|---|---|",
     ]
     for method, r in results["methods"].items():
+        flops_tot = r.get("flops_total", 0)
+        flops_inf = r.get("flops_inference", 0)
         lines.append(
             f"| {method} | {r['per_anchor']['mean']:.4f} | "
             f"{r['per_anchor']['std']:.4f} | "
             f"{r['aggregated_mean']:.4f} | "
             f"{r['aggregated_max']:.4f} | "
-            f"{r['flops']:.3e} |"
+            f"{flops_tot:.3e} | "
+            f"{flops_inf:.3e} |"
         )
     return "\n".join(lines)
 
@@ -74,27 +77,30 @@ def run(out_dir: str, methods: List[str], seq_len: int, gt_name: str = "ground_t
                 f"{method} shape {tuple(scores.shape)} != GT {tuple(gt_scores.shape)}"
             )
         metrics = all_metrics(scores, gt_scores)
-        flops = flops_for_method(method, params, seq_len=seq_len)
+        flops_dict = flops_for_method(method, params, seq_len=seq_len)
         results["methods"][method] = {
             **metrics,
-            "flops": int(flops) if flops is not None else None,
+            "flops_total": flops_dict["total"],
+            "flops_inference": flops_dict["inference"],
             "params_meta": {
                 k: int(v) if isinstance(v, (int, float)) and k != "model_name" else v
                 for k, v in params.items()
             },
         }
         logger.info(
-            "%s: per-anchor mean=%.4f agg_mean=%.4f agg_max=%.4f flops=%.3e",
+            "%s: per-anchor mean=%.4f agg_mean=%.4f agg_max=%.4f tot_flops=%.3e inf_flops=%.3e",
             method,
             metrics["per_anchor"]["mean"],
             metrics["aggregated_mean"],
             metrics["aggregated_max"],
-            flops or 0,
+            flops_dict["total"],
+            flops_dict["inference"],
         )
 
     # Also report ground-truth's own self-FLOPS for context
-    gt_flops = flops_for_method("ground_truth", gt_params, seq_len=seq_len)
-    results["config"]["gt_flops"] = int(gt_flops) if gt_flops else None
+    gt_flops_dict = flops_for_method("ground_truth", gt_params, seq_len=seq_len)
+    results["config"]["gt_flops_total"] = gt_flops_dict["total"]
+    results["config"]["gt_flops_inference"] = gt_flops_dict["inference"]
 
     return results
 
