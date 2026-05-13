@@ -71,7 +71,12 @@ def run(out_dir: str, methods: List[str], seq_len: int, gt_name: str = "ground_t
     }
 
     for method in methods:
-        scores, params = _load(out_dir, method)
+        try:
+            scores, params = _load(out_dir, method)
+        except FileNotFoundError as e:
+            logger.warning(f"Skipping method '{method}': {e}")
+            continue
+            
         if scores.shape != gt_scores.shape:
             raise ValueError(
                 f"{method} shape {tuple(scores.shape)} != GT {tuple(gt_scores.shape)}"

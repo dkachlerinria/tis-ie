@@ -20,13 +20,13 @@ echo "=========================================="
 
 mkdir -p "$INFLUENCE_OUT"
 
-bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG"
-bash runs/influence_spearman/compute_ground_truth.sh "$CFG"
-bash runs/influence_spearman/compute_less_scores.sh "$CFG"
-bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"
-bash runs/influence_spearman/compute_random_scores.sh "$CFG"
-bash runs/influence_spearman/compute_logra_scores.sh "$CFG"
-#bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"
+bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG" || echo "Influcoder failed, skipping"
+bash runs/influence_spearman/compute_ground_truth.sh "$CFG" || echo "Ground Truth failed, skipping"
+bash runs/influence_spearman/compute_less_scores.sh "$CFG" || echo "LESS failed, skipping"
+bash runs/influence_spearman/compute_embedding_scores.sh "$CFG" || echo "Embedding failed, skipping"
+bash runs/influence_spearman/compute_random_scores.sh "$CFG" || echo "Random failed, skipping"
+bash runs/influence_spearman/compute_logra_scores.sh "$CFG" || echo "LoGra failed, skipping"
+#bash runs/influence_spearman/compute_iprox_scores.sh "$CFG" || echo "IProX failed, skipping"
 
 python3 -m influence_eval.run_experiment \
     --out_dir "${INFLUENCE_OUT}" \
