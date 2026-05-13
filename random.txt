@@ -11,6 +11,8 @@ bash runs/influence_spearman/train_influcoder_encoder.sh runs/influence_spearman
 
 bash runs/influence_spearman/run_all.sh runs/influence_spearman/config_influence_tiny.sh
 
+python3 -m evaluation.bbh.run_eval --data_dir data/eval/bbh --save_dir /home/dkachler/year1/tis-ie/tis-ie/files/results/qwen3-1.7b-base/trained_model_less_bbh_top2500_subset_10000/results_bbh --model_name_or_path /home/dkachler/year1/tis-ie/tis-ie/files/models/qwen3-1.7b-base/trained_model_less_bbh_top2500_subset_10000 --use_chat_format --chat_formatting_function evaluation.templates.create_prompt_with_tulu_chat_format --use_vllm
+
 
 
 
