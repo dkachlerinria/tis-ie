@@ -161,110 +161,84 @@ def train_with_gradient_alignment(
                     if not w.requires_grad:
                         w.requires_grad_(True)
 
+                # ===== TARGET MODEL PASS (FlashAttention) =====
                 target_outputs = target_model(**batch)
-                with _sdpa_math_ctx():
-                    proxy_outputs = proxy_model(**batch)
-
                 l_target, t_logits = _supervised_loss(target_outputs, batch)
-                l_surr,   p_logits = _supervised_loss(proxy_outputs, batch)
-
-                # Diagnostic: autograd_grad below requires l_target to be a
-                # non-leaf tensor with a grad_fn. Surface the real cause if
-                # either condition fails.
+                
                 if l_target.grad_fn is None:
                     n_req = sum(int(w.requires_grad) for w in t_weights)
-                    sample_status = ", ".join(
-                        f"{i}: req={int(w.requires_grad)}/leaf={int(w.is_leaf)}"
-                        for i, w in enumerate(t_weights[:3])
-                    )
-                    raise RuntimeError(
-                        f"l_target has no grad_fn (cannot backprop). "
-                        f"l_target.requires_grad={l_target.requires_grad}, "
-                        f"l_target.is_leaf={l_target.is_leaf}, "
-                        f"l_target.dtype={l_target.dtype}. "
-                        f"t_weights with requires_grad=True: {n_req}/{len(t_weights)}. "
-                        f"First few t_weights: [{sample_status}]. "
-                        f"Likely cause: target_model forward was wrapped in no_grad/inference_mode "
-                        f"by Accelerate hooks (device_map='auto') or a callback."
-                    )
-
-                # ===== target mode gradients =====
+                    raise RuntimeError("l_target has no grad_fn.")
+                
                 t_grads = autograd_grad(
                     l_target, t_weights,
                     retain_graph=False, create_graph=False, allow_unused=True
                 )
                 t_grads = [(g if g is not None else torch.zeros_like(p)) for g, p in zip(t_grads, t_weights)]
                 
-                # Free target model activations as early as possible
-                del target_outputs
-
-                # ===== Collect proxy A,B params from each LinearSVD =====
-                p_A_params, p_B_params = [], []
-                for _, p_layer in layer_pairs:  # layer_pairs: List[(target_linear, proxy_LinearSVD)]
-                    A, B = p_layer.get_factors()          # -> nn.Parameter, nn.Parameter
-                    p_A_params.append(A)
-                    p_B_params.append(B)
-
-                # ===== proxy grads wrt A,B (enable higher-order so GA loss can backprop) =====
-                p_params = p_A_params + p_B_params
-                p_grads  = autograd_grad(
-                    l_surr, p_params,
-                    retain_graph=True, create_graph=True, allow_unused=True
-                )
+                # Detach everything needed from target model so graph can be freed
+                t_logits_detached = t_logits.float().detach()
+                t_grads_detached = [Gt.detach() for Gt in t_grads]
                 
-                # Free proxy model activations
-                del proxy_outputs
+                del target_outputs, l_target, t_logits, t_grads
+                
+                # ===== PROXY MODEL PASS (MATH Backend) =====
+                with _sdpa_math_ctx():
+                    proxy_outputs = proxy_model(**batch)
+                    l_surr, p_logits = _supervised_loss(proxy_outputs, batch)
 
-                # Split and zero-fill if a factor is frozen/unused
-                nA = len(p_A_params)
-                gA_p_list = list(p_grads[:nA])
-                gB_p_list = list(p_grads[nA:])
-                for i in range(nA):
-                    if gA_p_list[i] is None:
-                        gA_p_list[i] = torch.zeros_like(p_A_params[i])
-                    if gB_p_list[i] is None:
-                        gB_p_list[i] = torch.zeros_like(p_B_params[i])
+                    # Collect proxy A,B params
+                    p_A_params, p_B_params = [], []
+                    for _, p_layer in layer_pairs:
+                        A, B = p_layer.get_factors()
+                        p_A_params.append(A)
+                        p_B_params.append(B)
 
-                # ===== Factor-space GA: project target and align with proxy grads =====
-                eps_norm   = 1e-8  # numerical stability for cosine
-                master_dev = p_logits.device
-                l_align_sum, layer_used = torch.zeros((), device=master_dev), 0
+                    # Proxy grads (higher-order requires MATH)
+                    p_params = p_A_params + p_B_params
+                    p_grads = autograd_grad(
+                        l_surr, p_params,
+                        retain_graph=True, create_graph=True, allow_unused=True
+                    )
+                    
+                    del proxy_outputs
 
-                for (t_lin, p_layer), Gt, A, B, gA_s, gB_s in zip(
-                    layer_pairs, t_grads, p_A_params, p_B_params, gA_p_list, gB_p_list
-                ):  
-                    # target targets in factor space (detach so target graph isn’t touched)
-                    # Shapes: Gt [m,n], A [m,r], B [r,n]
-                    gA_t = (Gt.detach() @ B.transpose(0, 1))      # [m, r]
-                    gB_t = (A.transpose(0, 1) @ Gt.detach())      # [r, n]
+                    nA = len(p_A_params)
+                    gA_p_list = list(p_grads[:nA])
+                    gB_p_list = list(p_grads[nA:])
+                    for i in range(nA):
+                        if gA_p_list[i] is None: gA_p_list[i] = torch.zeros_like(p_A_params[i])
+                        if gB_p_list[i] is None: gB_p_list[i] = torch.zeros_like(p_B_params[i])
 
-                    # Cosine losses (simple, scale-robust-ish).
-                    loss_A = 1.0 - F.cosine_similarity(gA_s.float().reshape(-1),
-                                                    gA_t.float().reshape(-1),
-                                                    dim=0, eps=eps_norm)
-                    loss_B = 1.0 - F.cosine_similarity(gB_s.float().reshape(-1),
-                                                    gB_t.float().reshape(-1),
-                                                    dim=0, eps=eps_norm)
-                    loss_l = 0.5 * (loss_A + loss_B)
+                    eps_norm = 1e-8
+                    master_dev = p_logits.device
+                    l_align_sum, layer_used = torch.zeros((), device=master_dev), 0
 
-                    l_align_sum = l_align_sum + loss_l.to(master_dev, non_blocking=True)
-                    layer_used += 1
+                    for Gt, A, B, gA_s, gB_s in zip(t_grads_detached, p_A_params, p_B_params, gA_p_list, gB_p_list):  
+                        gA_t = (Gt @ B.transpose(0, 1))
+                        gB_t = (A.transpose(0, 1) @ Gt)
 
-                l_align = l_align_sum / max(layer_used, 1)
+                        loss_A = 1.0 - F.cosine_similarity(gA_s.float().reshape(-1), gA_t.float().reshape(-1), dim=0, eps=eps_norm)
+                        loss_B = 1.0 - F.cosine_similarity(gB_s.float().reshape(-1), gB_t.float().reshape(-1), dim=0, eps=eps_norm)
+                        loss_l = 0.5 * (loss_A + loss_B)
 
-                # ===== KD =====
-                with torch.cuda.amp.autocast(False):
-                    t_logp = F.log_softmax(t_logits.float().detach() / temperature, dim=-1)
-                    p_logp = F.log_softmax(p_logits.float() / temperature, dim=-1)
-                loss_per_token = kl_loss_fn(p_logp, t_logp).sum(dim=-1)
-                tok_mask = (batch["labels"] != -100).float() if "labels" in batch else batch["attention_mask"].float()
-                valid = tok_mask.sum().clamp_min(1.0)
-                l_kd = (loss_per_token * tok_mask).sum() / valid
-                l_kd = l_kd * (temperature ** 2)
+                        l_align_sum = l_align_sum + loss_l.to(master_dev, non_blocking=True)
+                        layer_used += 1
 
-                # ===== Backward =====
-                loss_total = l_align + lambda_anchor * l_kd
-                (loss_total / gradient_accumulation_steps).backward()
+                    l_align = l_align_sum / max(layer_used, 1)
+
+                    # KD Loss
+                    with torch.cuda.amp.autocast(False):
+                        t_logp = F.log_softmax(t_logits_detached / temperature, dim=-1)
+                        p_logp = F.log_softmax(p_logits.float() / temperature, dim=-1)
+                    loss_per_token = kl_loss_fn(p_logp, t_logp).sum(dim=-1)
+                    tok_mask = (batch["labels"] != -100).float() if "labels" in batch else batch["attention_mask"].float()
+                    valid = tok_mask.sum().clamp_min(1.0)
+                    l_kd = (loss_per_token * tok_mask).sum() / valid
+                    l_kd = l_kd * (temperature ** 2)
+
+                    # Backward pass (recomputes proxy graph using MATH)
+                    loss_total = l_align + lambda_anchor * l_kd
+                    (loss_total / gradient_accumulation_steps).backward()
 
                 # ===== Logging =====
                 epoch_total_loss += float(loss_total.detach())
