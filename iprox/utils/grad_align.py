@@ -177,8 +177,9 @@ def train_with_gradient_alignment(
                 )
                 t_grads = [(g if g is not None else torch.zeros_like(p)) for g, p in zip(t_grads, t_weights)]
                 
-                # Detach everything needed from target model so graph can be freed
-                t_logits_detached = t_logits.float().detach()
+                # Detach everything needed from target model so graph can be freed.
+                # Keep bfloat16 (no .float()) — we convert per-chunk inside KD.
+                t_logits_detached = t_logits.detach()
                 t_grads_detached = [Gt.detach() for Gt in t_grads]
                 
                 del target_outputs, l_target, t_logits, t_grads
@@ -228,14 +229,22 @@ def train_with_gradient_alignment(
 
                     l_align = l_align_sum / max(layer_used, 1)
 
-                    # KD Loss
-                    with torch.cuda.amp.autocast(False):
-                        t_logp = F.log_softmax(t_logits_detached / temperature, dim=-1)
-                        p_logp = F.log_softmax(p_logits.float() / temperature, dim=-1)
-                    loss_per_token = kl_loss_fn(p_logp, t_logp).sum(dim=-1)
+                    # KD Loss — chunked over sequence length to avoid allocating a
+                    # full (B, T, vocab) float32 tensor at once (764 MB+ for Qwen3).
+                    # Each chunk only needs ~2 × kd_chunk × vocab × 4 bytes (~40 MB
+                    # at kd_chunk=32 vs 764 MB for the full sequence).
                     tok_mask = (batch["labels"] != -100).float() if "labels" in batch else batch["attention_mask"].float()
                     valid = tok_mask.sum().clamp_min(1.0)
-                    l_kd = (loss_per_token * tok_mask).sum() / valid
+                    l_kd = torch.zeros((), device=master_dev)
+                    _kd_chunk = 32
+                    T = t_logits_detached.size(1)
+                    for _s in range(0, T, _kd_chunk):
+                        _e = min(_s + _kd_chunk, T)
+                        _t = F.log_softmax(t_logits_detached[:, _s:_e].float() / temperature, dim=-1)
+                        _p = F.log_softmax(p_logits[:, _s:_e].float() / temperature, dim=-1)
+                        _kl = kl_loss_fn(_p, _t).sum(dim=-1)          # (B, chunk_len)
+                        l_kd = l_kd + (_kl * tok_mask[:, _s:_e]).sum() / valid
+                        del _t, _p, _kl
                     l_kd = l_kd * (temperature ** 2)
 
                     # Backward pass (recomputes proxy graph using MATH)
