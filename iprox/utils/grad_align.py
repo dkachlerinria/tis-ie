@@ -1,4 +1,6 @@
 
+import gc
+
 import torch
 from torch import nn
 from torch.autograd import grad as autograd_grad
@@ -254,8 +256,13 @@ def train_with_gradient_alignment(
                 del p_grads, gA_p_list, gB_p_list, p_logits
                 del l_surr, l_align, l_kd, loss_total
                 del t_logits_detached, t_grads_detached
-                if step % 50 == 0:
-                    torch.cuda.empty_cache()
+                # create_graph=True leaves a deeply nested autograd graph that
+                # CPython's ref-counter may not fully break every step. gc.collect()
+                # breaks any remaining cycles, then empty_cache() returns the freed
+                # CUDA blocks to the allocator so they are immediately available for
+                # the next step's target-model forward pass.
+                gc.collect()
+                torch.cuda.empty_cache()
 
             except Exception as e:
                 logger.error(f"[Stage 2] Epoch {epoch+1}, Step {step}, Train Error: {e}", exc_info=True)

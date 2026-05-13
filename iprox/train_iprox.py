@@ -108,8 +108,9 @@ def main():
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--lambda_anchor', type=float, default=0.5)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
-    parser.add_argument('--max_seq_length', type=int, default=1024,
-                        help="Reduced from 2048 to fit Stage-2 on A30/A40. Pass 2048 explicitly if you have an A100/H100.")
+    parser.add_argument('--max_seq_length', type=int, default=512,
+                        help="Keep ≤512 on A30/A40 (24 GB) when running with create_graph=True. "
+                             "Pass 1024/2048 explicitly on A100/H100.")
     
     # Output args
     parser.add_argument('--output_dir', type=str, default="./files/models/iprox_proxy")
