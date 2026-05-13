@@ -149,6 +149,10 @@ def train_with_gradient_alignment(
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
 
             try:
+                # Release any cached-but-unallocated CUDA blocks before the
+                # expensive dual forward pass so the allocator has maximum room.
+                torch.cuda.empty_cache()
+
                 # Re-assert train mode each step: callbacks or eval passes can
                 # leave models in eval mode, which drops grad_fn on the loss.
                 target_model.train()
@@ -228,6 +232,9 @@ def train_with_gradient_alignment(
                         layer_used += 1
 
                     l_align = l_align_sum / max(layer_used, 1)
+                    # t_grads_detached is only used above; free it now (~1-1.5 GB
+                    # for 28-layer model) before the KD computation and backward.
+                    del t_grads_detached
 
                     # KD Loss — chunked over sequence length to avoid allocating a
                     # full (B, T, vocab) float32 tensor at once (764 MB+ for Qwen3).
