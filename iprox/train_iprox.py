@@ -163,10 +163,6 @@ def main():
 
     # 3. Initialize Proxy Model
     os.makedirs(args.output_dir, exist_ok=True)
-    logger.info(f"🔧 Initializing proxy with {args.init_method}...")
-    
-    # Ensure target model has gradients for probe collection
-    target_model.requires_grad_(True)
 
     # Diagnostic: Check module names
     linear_modules = [n for n, m in target_model.named_modules() if isinstance(m, torch.nn.Linear)]
@@ -176,15 +172,35 @@ def main():
     else:
         logger.warning("⚠️ No linear modules found in target model! Check model loading.")
 
-    proxy_model = init_proxy_model_with_IPSVD(
-        base_model=target_model,
-        loader_src=val_dataloader,
-        sparsity=args.sparsity,
-        init_method=args.init_method,
-        freeze_non_md_param=True,
-        target_modules=target_modules,
-        min_rank_multiple=1
-    )
+    # Cache the IPSVD init checkpoint so re-runs skip expensive probe collection.
+    checkpoint_path = os.path.join(args.output_dir, "init_pytorch_model.bin")
+    if os.path.exists(checkpoint_path):
+        logger.info(f"✓ Found IPSVD init checkpoint at {checkpoint_path}, reusing (RANDOM init + load).")
+        proxy_model = init_proxy_model_with_IPSVD(
+            base_model=target_model,
+            loader_src=val_dataloader,
+            sparsity=args.sparsity,
+            init_method="RANDOM",
+            freeze_non_md_param=True,
+            target_modules=target_modules,
+            min_rank_multiple=1,
+        )
+        from iprox.utils.init_with_ipsvd import load_proxy_model, save_proxy_model
+        load_proxy_model(proxy_model, checkpoint_path)
+    else:
+        logger.info(f"🔧 Initializing proxy with {args.init_method}...")
+        from iprox.utils.init_with_ipsvd import load_proxy_model, save_proxy_model
+        proxy_model = init_proxy_model_with_IPSVD(
+            base_model=target_model,
+            loader_src=val_dataloader,
+            sparsity=args.sparsity,
+            init_method=args.init_method,
+            freeze_non_md_param=True,
+            target_modules=target_modules,
+            min_rank_multiple=1,
+        )
+        save_proxy_model(proxy_model, checkpoint_path)
+        logger.info(f"💾 Saved IPSVD init checkpoint to {checkpoint_path}")
 
     # 4. Training Setup
     # IPSVD wraps the original Linear so the LinearSVD lives at "<name>.base_layer".

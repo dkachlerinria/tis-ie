@@ -249,8 +249,11 @@ def train_with_gradient_alignment(
                 # Free intermediate tensors before the next step. create_graph=True
                 # on the proxy + gradient checkpointing leaves higher-order subgraphs
                 # that don't fully release until references go out of scope.
-                del t_grads, p_grads, gA_p_list, gB_p_list, t_logits, p_logits
-                del l_target, l_surr, l_align, l_kd, loss_total
+                # NOTE: t_grads / t_logits / l_target were already deleted above
+                # after the target-model pass; only the proxy-pass variables remain.
+                del p_grads, gA_p_list, gB_p_list, p_logits
+                del l_surr, l_align, l_kd, loss_total
+                del t_logits_detached, t_grads_detached
                 if step % 50 == 0:
                     torch.cuda.empty_cache()
 
