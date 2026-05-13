@@ -19,10 +19,10 @@ export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
 
 # Tiny influcoder overrides
 export INFLUCODER_RUN_MODE="small"
-export INFLUCODER_N_TRAIN_A=2000
-export INFLUCODER_N_EVAL_A=500
-export INFLUCODER_N_TRAIN_P=4000
-export INFLUCODER_N_EVAL_P=2000
+export INFLUCODER_N_TRAIN_A=20
+export INFLUCODER_N_EVAL_A=50
+export INFLUCODER_N_TRAIN_P=40
+export INFLUCODER_N_EVAL_P=20
 
 export INFLUCODER_DB_DIR="${INFLUENCE_OUT}/influcoder_db"
 export INFLUCODER_ENCODER_DIR="/home/dkachler/working_folder/tis-ie/tis-ie/files/results/qwen3-1.7b-base/influence_spearman/qwen3-1.7b-base_tiny_anchors20_train200/influcoder_encoder"
