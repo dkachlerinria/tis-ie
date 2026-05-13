@@ -500,6 +500,9 @@ if __name__ == "__main__":
             train_loss_avg.update(loss.item() * args.grad_accum_steps)
             global_batch_idx += 1
 
+            # Free intermediate tensors immediately to prevent memory accumulation
+            del tokenized_a, tokenized_c, a_embs, c_embs, loss
+
             if global_batch_idx % args.grad_accum_steps == 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(enc.parameters(), 1.0)
@@ -507,6 +510,10 @@ if __name__ == "__main__":
                 scaler.update()
                 scheduler.step()
                 optimizer.zero_grad()
+
+            # Periodically flush the CUDA allocator cache
+            if global_batch_idx % 50 == 0:
+                torch.cuda.empty_cache()
 
             pbar.set_postfix(ema_loss=f"{train_loss_avg.ema():.4f}")
 
@@ -524,6 +531,10 @@ if __name__ == "__main__":
                                batch_size=args.batch_size, n_candidates=args.n_candidates_per_batch)
         print(f"\n   [Epoch {epoch+1}] Loss - Train: {train_loss_avg.ema():.4f} | Eval: {ev['loss']:.4f}")
         print(f"   [Epoch {epoch+1}] Eval Spearman - Agg ρ: {ev['agg_spearman']:.4f} | PA ρ: {ev['per_anchor_mean']:.4f}")
+
+        # Release all epoch-level memory before the next epoch
+        gc.collect()
+        torch.cuda.empty_cache()
 
     # 3. Final Evaluation
     print("\n" + "=" * 70 + "\n🏁 FINAL EVALUATION\n" + "=" * 70)

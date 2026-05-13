@@ -51,15 +51,16 @@ python influcoder/gradient_stocking.py \
     --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/pool"
 
-# eval_pool: Tulu [0:N_EVAL_P]
-echo "Stocking eval_pool (Tulu [0:${INFLUCODER_N_EVAL_P}])..."
+# eval_pool: Tulu [END_INDEX : END_INDEX+N_EVAL_P]
+# Starts AFTER the Spearman eval range [0:END_INDEX] to avoid contamination
+echo "Stocking eval_pool (Tulu [${END_INDEX}:$((END_INDEX+INFLUCODER_N_EVAL_P))])..."
 python influcoder/gradient_stocking.py \
     --dataset tulu \
     --split eval_pool \
     --model_name "${INFLUENCE_MODEL}" \
     --proj_dim "${INFLUCODER_PROJ_DIM}" \
     --n_samples "${INFLUCODER_N_EVAL_P}" \
-    --start_index 0 \
+    --start_index "${END_INDEX}" \
     --load_warmup_path "${INFLUENCE_MODEL}" \
     --target_modules ${LORA_TARGET_MODULES} \
     --output_name "${INFLUCODER_DB_DIR}/eval_pool"
