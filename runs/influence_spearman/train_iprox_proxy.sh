@@ -19,7 +19,7 @@ python iprox/train_iprox.py \
     --n_train_a       "${INFLUCODER_N_TRAIN_A}" \
     --n_train_p       "${INFLUCODER_N_TRAIN_P}" \
     --end_index       "${END_INDEX}" \
-    --sparsity        "${IPROX_SPARSITY}" \
+    --sparsity        0.9 \
     --epochs          1 \
     --output_dir      "${IPROX_PROXY_DIR}" \
     --gradient_accumulation_steps "${GRAD_ACC}" \

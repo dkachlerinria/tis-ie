@@ -38,10 +38,6 @@ export RANDOM_SEED=0
 # Sequence length used for analytic FLOPS accounting (training max_seq_length)
 export FLOPS_SEQ_LEN=2048
 
-# IProX settings
-export IPROX_SPARSITY=0.5          # Must match the sparsity used when training the proxy.
-export IPROX_PROJ_DIM=4096         # JL projection dim (reduces ~840 MB gradient vectors to ~16 KB).
-
 # Influcoder settings
 export INFLUCODER_PROJ_DIM=8192
 export INFLUCODER_RUN_MODE="small"
