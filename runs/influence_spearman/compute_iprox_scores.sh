@@ -22,5 +22,5 @@ python3 -m influence_eval.compute_iprox_scores \
     --save_dir           "${INFLUENCE_OUT}" \
     --end_index          "${END_INDEX}" \
     --num_anchors        "${NUM_ANCHORS}" \
-    --sparsity           0.5 \
+    --sparsity           0.9 \
     --out_name           "iprox"
