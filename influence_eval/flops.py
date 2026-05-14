@@ -170,7 +170,7 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> dict:
         out["inference"] = int(params.get("inference_flops", out["total"]))
         return out
 
-    if method in ("ground_truth", "less"):
+    if method in ("ground_truth", "less", "less_small"):
         val = flops_less(
             num_params_total=params["total"],
             num_params_lora=params["trainable"],
@@ -189,7 +189,7 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> dict:
             emb_dim=params["emb_dim"],
         )
         out["total"] = out["inference"] = int(val)
-    elif method in ("logra_raw", "logra_fim"):
+    elif method in ("logra_raw", "logra_fim", "logra_raw_small", "logra_fim_small"):
         val = flops_logra(
             num_params_total=params["total"],
             num_params_logra_b=params["trainable"],

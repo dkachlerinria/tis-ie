@@ -37,6 +37,7 @@ def compute_logra_scores(
     logra_rank: int,
     mlp_only: bool,
     batch_size: int,
+    out_suffix: str = "",
 ) -> None:
     """Writes BOTH variants in one run (loads the model once):
       - logra_raw_scores.pt: cosine on raw B-gradients (no FIM)
@@ -98,8 +99,8 @@ def compute_logra_scores(
         shared_flops, raw_flops, fim_flops,
     )
 
-    raw_path = os.path.join(save_dir, "logra_raw_scores.pt")
-    fim_path = os.path.join(save_dir, "logra_fim_scores.pt")
+    raw_path = os.path.join(save_dir, f"logra_raw{out_suffix}_scores.pt")
+    fim_path = os.path.join(save_dir, f"logra_fim{out_suffix}_scores.pt")
     torch.save(raw_scores, raw_path)
     torch.save(fim_scores, fim_path)
     logger.info("Saved %s shape=%s", raw_path, tuple(raw_scores.shape))
@@ -116,11 +117,11 @@ def compute_logra_scores(
     }
     torch.save(
         {**base_params, "measured_flops": raw_flops},
-        os.path.join(save_dir, "logra_raw_params.pt"),
+        os.path.join(save_dir, f"logra_raw{out_suffix}_params.pt"),
     )
     torch.save(
         {**base_params, "measured_flops": fim_flops},
-        os.path.join(save_dir, "logra_fim_params.pt"),
+        os.path.join(save_dir, f"logra_fim{out_suffix}_params.pt"),
     )
     logger.info("Saved params for both variants")
 
@@ -135,6 +136,8 @@ def parse_args():
     p.add_argument("--logra_rank", type=int, default=8)
     p.add_argument("--no_mlp_only", action="store_true")
     p.add_argument("--batch_size", type=int, default=1)
+    p.add_argument("--out_suffix", type=str, default="",
+                   help="Suffix appended to output filenames, e.g. '_small' → logra_raw_small_scores.pt")
     return p.parse_args()
 
 
@@ -153,6 +156,7 @@ def main():
         logra_rank=args.logra_rank,
         mlp_only=not args.no_mlp_only,
         batch_size=args.batch_size,
+        out_suffix=args.out_suffix,
     )
 
 

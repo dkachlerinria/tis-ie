@@ -42,6 +42,10 @@ export LOGRA_BATCH_SIZE=1
 # Target all-linear layers (like LESS) for fair comparison, not just MLP
 export LOGRA_ALL_LINEAR=1
 
+# Cheaper Pareto-frontier variants
+export LESS_SMALL_LORA_RANK=8    # was LORA_RANK=16; halves P_lora → ~2% FLOPs reduction
+export LOGRA_SMALL_RANK=4        # was LOGRA_RANK=8; FIM inversion 64× cheaper
+
 # Random baseline seed
 export RANDOM_SEED=0
 
