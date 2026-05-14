@@ -23,6 +23,6 @@ python iprox/train_iprox.py \
     --epochs          1 \
     --output_dir      "${IPROX_PROXY_DIR}" \
     --gradient_accumulation_steps "${GRAD_ACC}" \
-    --max_seq_length  128 \
+    --max_seq_length  256 \
     --lr              1e-4 \
     --seed            137
