@@ -25,5 +25,5 @@ export INFLUCODER_N_TRAIN_P=2000
 export INFLUCODER_N_EVAL_P=500
 
 export INFLUCODER_DB_DIR="${INFLUENCE_OUT}/influcoder_db"
-export INFLUCODER_ENCODER_DIR="/home/dkachler/working_folder/tis-ie/tis-ie/files/results/qwen3-1.7b-base/influence_spearman/qwen3-0.6b_tiny_anchors100_train1000/influcoder_encoder"
+export INFLUCODER_ENCODER_DIR="/home/dkachler/working_folder/tis-ie/tis-ie/files/results/qwen3-1.7b-base/influence_spearman/qwen3-1.7b-base_tiny_anchors20_train200/influcoder_encoder"
 #${INFLUENCE_OUT}/influcoder_encoder"
