@@ -19,8 +19,8 @@ python iprox/train_iprox.py \
     --target_model    "${INFLUENCE_MODEL}" \
     --benchmark       "${BENCHMARK}" \
     --train_dataset   "${TRAIN_DATASET}" \
-    --n_train_a       "${INFLUCODER_N_TRAIN_A}" \
-    --n_train_p       "${INFLUCODER_N_TRAIN_P}" \
+    --n_train_a       2000 \
+    --n_train_p       8000 \
     --end_index       "${END_INDEX}" \
     --sparsity        0.8 \
     --epochs          4 \
