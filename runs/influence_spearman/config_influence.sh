@@ -53,7 +53,7 @@ export RANDOM_SEED=0
 export FLOPS_SEQ_LEN=2048
 
 # Influcoder settings
-export INFLUCODER_PROJ_DIM=8192
+export INFLUCODER_PROJ_DIM=32768
 export INFLUCODER_RUN_MODE="small"
 export INFLUCODER_N_TRAIN_A=2000        # BBH anchors for encoder training (start at NUM_ANCHORS)
 export INFLUCODER_N_EVAL_A=500          # BBH anchors for encoder eval (start after train_anchors)
