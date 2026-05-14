@@ -92,7 +92,7 @@ def compute_iprox_scores(
     for sample in tqdm(anchor_samples, desc="Dev Gradients"):
         prompt, response = sample["prompt"], sample["response"]
         messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
-        batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=1024, include_response=True)
+        batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=2048, include_response=True)
         for k in batch:
             if torch.is_tensor(batch[k]):
                 batch[k] = batch[k].unsqueeze(0)
@@ -118,7 +118,7 @@ def compute_iprox_scores(
     scores = torch.zeros((num_anchors, len(ds)), dtype=torch.float32)
 
     for j in tqdm(range(len(ds)), desc="Train Similarity"):
-        batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=1024, include_response=True)
+        batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=2048, include_response=True)
         for k in batch:
             if torch.is_tensor(batch[k]):
                 batch[k] = batch[k].unsqueeze(0)

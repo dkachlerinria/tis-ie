@@ -16,16 +16,16 @@ echo "🚀 Training IProX Proxy (Mode: ${INFLUCODER_RUN_MODE})..."
 rm -f "${IPROX_PROXY_DIR}/init_pytorch_model.bin"
 
 python iprox/train_iprox.py \
-    --target_model    "${INFLUENCE_MODEL}" \
-    --benchmark       "${BENCHMARK}" \
-    --train_dataset   "${TRAIN_DATASET}" \
-    --n_train_a       2000 \
-    --n_train_p       8000 \
-    --end_index       "${END_INDEX}" \
-    --sparsity        0.8 \
-    --epochs          4 \
-    --output_dir      "${IPROX_PROXY_DIR}" \
-    --gradient_accumulation_steps "${GRAD_ACC}" \
-    --max_seq_length  2048 \
-    --lr              1e-4 \
-    --seed            137
+    --target_model      "${INFLUENCE_MODEL}" \
+    --train_dataset     "${TRAIN_DATASET}" \
+    --n_train_p         8000 \
+    --pool_start_index  "${END_INDEX}" \
+    --sparsity          0.8 \
+    --batch_size        4 \
+    --gradient_accumulation_steps 1 \
+    --lambda_anchor     0.0 \
+    --epochs            5 \
+    --max_seq_length    2048 \
+    --output_dir        "${IPROX_PROXY_DIR}" \
+    --lr                1e-4 \
+    --seed              137
