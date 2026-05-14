@@ -93,7 +93,9 @@ def compute_iprox_scores(
         prompt, response = sample["prompt"], sample["response"]
         messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
         batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=1024, include_response=True)
-        for k in batch: batch[k] = batch[k].unsqueeze(0)
+        for k in batch:
+            if torch.is_tensor(batch[k]):
+                batch[k] = batch[k].unsqueeze(0)
         
         g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
         if g is not None:
@@ -117,7 +119,9 @@ def compute_iprox_scores(
     
     for j in tqdm(range(len(ds)), desc="Train Similarity"):
         batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=1024, include_response=True)
-        for k in batch: batch[k] = batch[k].unsqueeze(0)
+        for k in batch:
+            if torch.is_tensor(batch[k]):
+                batch[k] = batch[k].unsqueeze(0)
         
         g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
         if g_t is not None:
