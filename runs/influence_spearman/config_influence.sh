@@ -16,6 +16,10 @@ export ENCODER_MODEL="jhu-clsp/ettin-encoder-150m"
 export END_INDEX=10000
 export NUM_ANCHORS=100
 
+# Training defaults for proxies
+export BATCH_SIZE=1
+export GRAD_ACC=8
+
 # Projection dimensions
 export GT_PROJ_DIM=65536
 export LESS_PROJ_DIM=8192
