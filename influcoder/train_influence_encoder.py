@@ -180,14 +180,35 @@ def anchor_samples_to_texts(samples) -> list[str]:
 
 
 def pool_samples_to_texts(samples, tokenizer=None) -> list[str]:
-    """Format Tulu pool (prompt, response) pairs for the encoder.
+    """Format Tulu pool entries for the encoder.
 
-    Matches the format produced by _concat_messages() in
-    compute_sentence_embeds.py so the encoder sees identical text at training
-    time and final-eval time.
+    When the prompt field is a JSON-encoded messages list (stored by
+    render_for_storage), reconstructs the full conversation exactly as
+    _concat_messages() in compute_sentence_embeds.py does, preserving system
+    turns and multi-turn structure.  Falls back to a simple user/assistant wrap
+    for plain-string prompts (BBH or legacy DBs).
     """
     eos = tokenizer.eos_token if (tokenizer and tokenizer.eos_token) else ""
-    return [f"<|user|>\n{p}\n<|assistant|>\n{r}{eos}" for p, r in samples]
+    texts = []
+    for p, r in samples:
+        try:
+            msgs = json.loads(p)
+            if isinstance(msgs, list):
+                parts = []
+                for m in msgs:
+                    role, content = m.get("role", ""), m.get("content", "").strip()
+                    if role == "system":
+                        parts.append(f"<|system|>\n{content}\n")
+                    elif role == "user":
+                        parts.append(f"<|user|>\n{content}\n")
+                    elif role == "assistant":
+                        parts.append(f"<|assistant|>\n{content}{eos}\n")
+                texts.append("".join(parts).strip())
+                continue
+        except (json.JSONDecodeError, ValueError, KeyError):
+            pass
+        texts.append(f"<|user|>\n{p}\n<|assistant|>\n{r}{eos}")
+    return texts
 
 # =========================================================================
 # Native Gradient Metrics Logic
@@ -624,11 +645,18 @@ if __name__ == "__main__":
     )
     anchor_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
-    # Tulu pool: use encode_with_messages_format (same as stocking and pipeline)
-    pool_hf = HFDataset.from_list([
-        {"messages": [{"role": "user", "content": p}, {"role": "assistant", "content": r}]}
-        for p, r in eval_pool
-    ])
+    # Tulu pool: decode JSON messages stored by render_for_storage and pass directly
+    # to encode_with_messages_format — exactly as compute_gradient_scores.py does.
+    def _pool_entry(p, r):
+        try:
+            msgs = json.loads(p)
+            if isinstance(msgs, list):
+                return {"messages": msgs}
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return {"messages": [{"role": "user", "content": p}, {"role": "assistant", "content": r}]}
+
+    pool_hf = HFDataset.from_list([_pool_entry(p, r) for p, r in eval_pool])
     pool_hf = pool_hf.map(
         lambda x: encode_with_messages_format(x, gradient_tokenizer, max_seq_length=2048, include_response=True),
         num_proc=1, load_from_cache_file=False,
