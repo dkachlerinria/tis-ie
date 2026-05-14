@@ -102,6 +102,9 @@ def check_gradient_diagnostics(name: str, grads: np.ndarray):
 # =========================================================================
 
 def load_all_doc_ids(db_path: str, seed: int = 42) -> list[str]:
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"❌ SQLite database not found at: {os.path.abspath(db_path)}\n"
+                                f"   Make sure you have run the gradient stocking script for this configuration!")
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("""
@@ -115,7 +118,8 @@ def load_all_doc_ids(db_path: str, seed: int = 42) -> list[str]:
 
 def load_stocked_samples_by_ids(db_path: str, doc_ids: list[str], seed: int = 42) -> tuple[list, np.ndarray]:
     if not doc_ids: return [], np.array([])
-    
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"❌ SQLite database not found at: {os.path.abspath(db_path)}")
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     try:

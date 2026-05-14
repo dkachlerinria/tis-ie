@@ -46,9 +46,8 @@ export INFLUCODER_N_EVAL_A=500          # BBH anchors for encoder eval (start af
 export INFLUCODER_N_TRAIN_P=2000        # Tulu pool for encoder training (start at END_INDEX)
 export INFLUCODER_N_EVAL_P=2000          # Tulu pool for encoder eval (start at END_INDEX+N_TRAIN_P, disjoint from [0:END_INDEX])
 
-# Output directory (model-scoped so model swaps don't collide)
-export RUN_ID="${INFLUENCE_MODEL_SLUG}_anchors${NUM_ANCHORS}_train${END_INDEX}"
-export INFLUENCE_OUT="${RESULTS_ROOT}/influence_spearman/${RUN_ID}"
+# Output directory (model-scoped, completely separate from SFT paths)
+export INFLUENCE_OUT="files/influence_models/${INFLUENCE_MODEL_SLUG}"
 
 export INFLUCODER_DB_DIR="${INFLUENCE_OUT}/influcoder_db"
 export INFLUCODER_ENCODER_DIR="${INFLUENCE_OUT}/influcoder_encoder"
