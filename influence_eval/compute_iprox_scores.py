@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from influence_eval.bbh_data import bbh_texts_for_encoder
+from influence_eval.bbh_data import load_bbh_samples
 from influence_eval.model_utils import count_params
 from iprox.utils.init_with_ipsvd import init_proxy_model_with_IPSVD, load_proxy_model
 from common.data import encode_with_messages_format, construct_test_sample
@@ -64,9 +64,9 @@ def compute_iprox_scores(
         tokenizer.pad_token = tokenizer.eos_token
     
     base_model = AutoModelForCausalLM.from_pretrained(
-        proxy_path, 
-        torch_dtype=torch.bfloat16, 
-        device_map="auto"
+        proxy_path,
+        dtype=torch.bfloat16,
+        device_map="auto",
     )
 
     proxy_model = init_proxy_model_with_IPSVD(
@@ -84,14 +84,13 @@ def compute_iprox_scores(
     for p in proxy_model.parameters():
         p.requires_grad_(True)
 
-    # Load Dev Data (Spearman Standard)
+    # Load Dev Data (Spearman Standard) — same seed=42 shuffle as all other methods.
     logger.info("📥 Loading dev samples...")
-    # We use the bbh_texts_for_encoder to match the exact same samples as GT and Influcoder
-    anchor_samples = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
-    
+    anchor_samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
+
     dev_grads = []
-    for prompt, response in tqdm(anchor_samples, desc="Dev Gradients"):
-        # Format for proxy
+    for sample in tqdm(anchor_samples, desc="Dev Gradients"):
+        prompt, response = sample["prompt"], sample["response"]
         messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
         batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=1024, include_response=True)
         for k in batch: batch[k] = batch[k].unsqueeze(0)
@@ -140,7 +139,8 @@ def compute_iprox_scores(
         "num_train": int(scores.shape[1]),
         "model_name": proxy_path,
         "sparsity": sparsity,
-        "method": "iprox"
+        "method": "iprox",
+        "measured_flops": None,   # gradient-per-sample scoring; FLOPs not yet tracked
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
 
