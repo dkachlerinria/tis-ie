@@ -21,7 +21,7 @@ python iprox/train_iprox.py \
     --n_train_p         8000 \
     --pool_start_index  "${END_INDEX}" \
     --sparsity          0.8 \
-    --batch_size        4 \
+    --batch_size        1 \
     --gradient_accumulation_steps 1 \
     --lambda_anchor     0.0 \
     --epochs            5 \
