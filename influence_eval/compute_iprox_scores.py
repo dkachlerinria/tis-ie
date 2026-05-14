@@ -48,7 +48,7 @@ def compute_iprox_scores(
     num_anchors: int,
     train_dataset_name: str,
     dev_dataset_name: str,
-    sparsity: float = 0.5,
+    sparsity: float = 0.9,
     target_modules: list = None,
     out_name: str = "iprox",
 ) -> None:
@@ -157,7 +157,7 @@ def main():
     p.add_argument("--num_anchors", type=int, required=True)
     p.add_argument("--train_dataset_name", type=str, default="Harvard-DCML/tulu-v2-197K-processed")
     p.add_argument("--dev_dataset_name", type=str, default="bbh")
-    p.add_argument("--sparsity", type=float, default=0.5)
+    p.add_argument("--sparsity", type=float, default=0.9)
     p.add_argument("--out_name", type=str, default="iprox")
     args = p.parse_args()
 
