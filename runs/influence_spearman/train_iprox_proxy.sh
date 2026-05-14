@@ -12,6 +12,9 @@ mkdir -p "${IPROX_PROXY_DIR}"
 
 echo "🚀 Training IProX Proxy (Mode: ${INFLUCODER_RUN_MODE})..."
 
+# Force a 100% fresh start by deleting the cached SVD factorization
+rm -f "${IPROX_PROXY_DIR}/init_pytorch_model.bin"
+
 python iprox/train_iprox.py \
     --target_model    "${INFLUENCE_MODEL}" \
     --benchmark       "${BENCHMARK}" \
@@ -23,6 +26,6 @@ python iprox/train_iprox.py \
     --epochs          1 \
     --output_dir      "${IPROX_PROXY_DIR}" \
     --gradient_accumulation_steps "${GRAD_ACC}" \
-    --max_seq_length  512 \
+    --max_seq_length  1024 \
     --lr              1e-4 \
     --seed            137

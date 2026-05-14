@@ -3,13 +3,17 @@
 # Sources runs/config.sh for TRAINING_MODEL, paths, LoRA defaults, etc.
 # then layers experiment-specific knobs on top.
 
-source runs/config.sh
-
 # Model for influence calculations
 export INFLUENCE_MODEL="Qwen/Qwen3-0.6B"
 INFLUENCE_MODEL_SLUG=$(echo "${INFLUENCE_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
-# Anchor count (BBH dev split sliced [0:NUM_ANCHORS])
+# Base Dataset and Task Config
+export BENCHMARK="bbh"
+export TRAIN_DATASET="Harvard-DCML/tulu-v2-197K-processed"
+export ENCODER_MODEL="jhu-clsp/ettin-encoder-150m"
+
+# Evaluation sizes
+export END_INDEX=10000
 export NUM_ANCHORS=100
 
 # Projection dimensions
@@ -22,9 +26,11 @@ export LORA_SEED=0
 # Gradient accumulation before projection (tune down to save memory)
 export PROJECT_INTERVAL=1
 
-# Smaller LoRA for A30
+# Smaller LoRA for A30 memory
 export LORA_RANK=16
 export LORA_ALPHA=32
+export LORA_DROPOUT=0.1
+export LORA_TARGET_MODULES="all-linear"
 
 # LoGRA settings (rank=8 matches paper default)
 export LOGRA_RANK=8

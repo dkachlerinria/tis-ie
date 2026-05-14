@@ -8,7 +8,6 @@ source "$CFG"
 
 echo "=========================================="
 echo "Influence-Spearman pipeline"
-echo "  TRAINING_MODEL = ${TRAINING_MODEL}"
 echo "  INFLUENCE_MODEL = ${INFLUENCE_MODEL}"
 echo "  BENCHMARK      = ${BENCHMARK}"
 echo "  NUM_ANCHORS    = ${NUM_ANCHORS}"
