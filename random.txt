@@ -15,6 +15,7 @@ python3 -m evaluation.bbh.run_eval --data_dir data/eval/bbh --save_dir /home/dka
 
 
 
+bash runs/influence_spearman/train_iprox_proxy.sh runs/influence_spearman/config_influence_tiny.sh
 
 
 
