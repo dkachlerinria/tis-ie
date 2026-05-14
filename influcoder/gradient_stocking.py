@@ -671,8 +671,8 @@ class GradientExtractor:
 
             input_ids, labels = build_example(sample, self.tokenizer, self.dataset_name)
 
-            input_ids = torch.tensor(input_ids).unsqueeze(0).to(device)
-            labels = torch.tensor(labels).unsqueeze(0).to(device)
+            input_ids = torch.as_tensor(input_ids).unsqueeze(0).to(device)
+            labels = torch.as_tensor(labels).unsqueeze(0).to(device)
 
             if (labels == -100).all():
                 self.buffer[i].zero_()
