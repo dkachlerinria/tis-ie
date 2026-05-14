@@ -23,7 +23,7 @@ python iprox/train_iprox.py \
     --n_train_p       "${INFLUCODER_N_TRAIN_P}" \
     --end_index       "${END_INDEX}" \
     --sparsity        0.8 \
-    --epochs          1 \
+    --epochs          4 \
     --output_dir      "${IPROX_PROXY_DIR}" \
     --gradient_accumulation_steps "${GRAD_ACC}" \
     --max_seq_length  2048 \
