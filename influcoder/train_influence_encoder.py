@@ -165,15 +165,29 @@ def load_stocked_samples_by_ids(db_path: str, doc_ids: list[str], seed: int = 42
     
     return samples, np.array(gradients) if gradients else np.array([])
 
-def samples_to_texts(samples, tokenizer=None):
-    """Reconstruct chat-templated text from DB-stored (prompt, response) parts.
+_ENCODER_PREFIX = (
+    "Instruct: Given a sample, find the passages closest to that sample.\nQuery:"
+)
 
-    gradient_stocking.render_for_storage splits the chat-templated full_text
-    into a prefix (stored in `prompt`) and suffix (stored in `response`) such
-    that prompt + response == full_text. So we simply concatenate to recover
-    the exact text the gradient was computed against.
+
+def anchor_samples_to_texts(samples) -> list[str]:
+    """Format BBH anchor (prompt, response) pairs for the encoder.
+
+    Matches the format used by bbh_texts_for_encoder() in bbh_data.py so the
+    encoder sees identical text at training time and final-eval time.
     """
-    return [p + r for p, r in samples]
+    return [f"{_ENCODER_PREFIX} {p} {r}".strip() for p, r in samples]
+
+
+def pool_samples_to_texts(samples, tokenizer=None) -> list[str]:
+    """Format Tulu pool (prompt, response) pairs for the encoder.
+
+    Matches the format produced by _concat_messages() in
+    compute_sentence_embeds.py so the encoder sees identical text at training
+    time and final-eval time.
+    """
+    eos = tokenizer.eos_token if (tokenizer and tokenizer.eos_token) else ""
+    return [f"<|user|>\n{p}\n<|assistant|>\n{r}{eos}" for p, r in samples]
 
 # =========================================================================
 # Native Gradient Metrics Logic
@@ -468,10 +482,10 @@ if __name__ == "__main__":
     check_gradient_diagnostics("Train Pool",    grads_train_pool)
     check_gradient_diagnostics("Eval Pool",     grads_eval_pool)
 
-    train_anchors_text = samples_to_texts(train_anchors, gradient_tokenizer)
-    eval_anchors_text  = samples_to_texts(eval_anchors,  gradient_tokenizer)
-    train_text         = samples_to_texts(train_pool,    gradient_tokenizer)
-    eval_text          = samples_to_texts(eval_pool,     gradient_tokenizer)
+    train_anchors_text = anchor_samples_to_texts(train_anchors)
+    eval_anchors_text  = anchor_samples_to_texts(eval_anchors)
+    train_text         = pool_samples_to_texts(train_pool, gradient_tokenizer)
+    eval_text          = pool_samples_to_texts(eval_pool,  gradient_tokenizer)
     
     # Pre-calculate Ground Truth Scores (single CountSketch seed for both train and eval)
     true_scores_train = torch.mm(
