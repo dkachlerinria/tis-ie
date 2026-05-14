@@ -19,6 +19,10 @@ echo "=========================================="
 
 mkdir -p "$INFLUENCE_OUT"
 
+# Wipe all stale score/params artifacts so run_experiment only sees results
+# from this run — not leftover files from a previous invocation.
+rm -f "${INFLUENCE_OUT}"/*_scores.pt "${INFLUENCE_OUT}"/*_params.pt
+
 bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG"       || echo "Influcoder failed, skipping"
 bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"           || echo "IProX failed, skipping"
 bash runs/influence_spearman/compute_ground_truth.sh "$CFG"           || echo "Ground Truth failed, skipping"
