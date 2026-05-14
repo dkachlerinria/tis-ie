@@ -421,7 +421,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss_mode', type=str, default='kl', choices=['kl', 'mse'], help="Secondary loss: 'kl' (ranking) or 'mse' (ablation)")
     parser.add_argument('--output_dir', type=str, default="./checkpoints/influence_encoder")
 
-    
+
     args = parser.parse_args()
     cfg = MODES[args.run_mode]
     epochs = args.epochs if args.epochs is not None else cfg['epochs']
@@ -598,6 +598,38 @@ if __name__ == "__main__":
         ["Influence-Encoder", f"{inf_metrics['agg_spearman']:.4f}", f"{inf_metrics['per_anchor_spearman_mean']:.4f}"]
     ]
     print(tabulate(tbl, headers=["Method", "Aggregated ρ", "Per-Anchor ρ"], tablefmt="github"))
+
+    # --- Diagnostic: eval samples, inference format, CountSketch labels (automatic) ---
+    # Uses the held-out eval anchor/pool pairs with true_scores_eval as ground truth.
+    # Compare this Spearman to the final pipeline Spearman (from compute_influcoder_scores.py):
+    #   If similar  → CountSketch is a fine proxy; any remaining gap is format/data-split.
+    #   If this >> pipeline → CountSketch is still too lossy; raise INFLUCODER_PROJ_DIM further.
+    print("\n" + "=" * 70)
+    print("🔬 DIAGNOSTIC: Eval Samples — Encoder (inference format) vs CountSketch GT")
+    print("=" * 70)
+    sketch_dim = grads_eval_anchors.shape[1]
+    print(f"   CountSketch dim={sketch_dim}  |  eval anchors={len(eval_anchors_text)}  pool={len(eval_text)}")
+    with torch.inference_mode():
+        z_a_diag = enc.encode(eval_anchors_text, normalize_embeddings=True,
+                              convert_to_numpy=True, batch_size=32)
+        z_e_diag = enc.encode(eval_text, normalize_embeddings=True,
+                              convert_to_numpy=True, batch_size=32)
+        pred_eval = z_a_diag @ z_e_diag.T
+
+    diag_metrics = compute_native_metrics(true_scores_eval, pred_eval, agg_mode=args.agg_mode)
+
+    zb_a_diag = base_enc.encode(eval_anchors_text, normalize_embeddings=True,
+                                convert_to_numpy=True, batch_size=32)
+    zb_e_diag = base_enc.encode(eval_text, normalize_embeddings=True,
+                                convert_to_numpy=True, batch_size=32)
+    base_diag = compute_native_metrics(true_scores_eval, zb_a_diag @ zb_e_diag.T, agg_mode=args.agg_mode)
+
+    diag_rows = [
+        ["Semantic Baseline", f"{base_diag['agg_spearman']:.4f}", f"{base_diag['per_anchor_spearman_mean']:.4f}"],
+        [f"Influence-Encoder",  f"{diag_metrics['agg_spearman']:.4f}", f"{diag_metrics['per_anchor_spearman_mean']:.4f}"],
+    ]
+    print(tabulate(diag_rows, headers=["Method", "Agg ρ (vs sketch)", "PA ρ (vs sketch)"], tablefmt="github"))
+    print("   ^ Compare Agg ρ here vs final pipeline Spearman (compute_influcoder_scores.py).")
 
     # Save
     combined_metrics = {
