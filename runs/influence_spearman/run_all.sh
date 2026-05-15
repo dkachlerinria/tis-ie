@@ -24,20 +24,22 @@ mkdir -p "$INFLUENCE_OUT"
 rm -f "${INFLUENCE_OUT}"/*_scores.pt "${INFLUENCE_OUT}"/*_params.pt
 
 #bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG"       || echo "Influcoder failed, skipping"
-#bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"           || echo "IProX failed, skipping"
+bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"           || echo "IProX failed, skipping"
 bash runs/influence_spearman/compute_ground_truth.sh "$CFG"           || echo "Ground Truth failed, skipping"
 #bash runs/influence_spearman/compute_less_scores.sh "$CFG"           || echo "LESS failed, skipping"
 #bash runs/influence_spearman/compute_less_small_scores.sh "$CFG"     || echo "LESS-small failed, skipping"
 bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"      || echo "Embedding failed, skipping"
 #bash runs/influence_spearman/compute_random_scores.sh "$CFG"         || echo "Random failed, skipping"
 #bash runs/influence_spearman/compute_logra_scores.sh "$CFG"          || echo "LoGRA failed, skipping"
-bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"    || echo "LoGRA-small failed, skipping"
+#bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"    || echo "LoGRA-small failed, skipping"
+#bash runs/influence_spearman/compute_less_proxy_scores.sh "$CFG"     || echo "LESS-proxy failed, skipping"
+#bash runs/influence_spearman/compute_logra_proxy_scores.sh "$CFG"    || echo "LoGRA-proxy failed, skipping"
 # Force a fresh evaluation summary
 rm -f "${INFLUENCE_OUT}/results.json"
 
 python3 -m influence_eval.run_experiment \
     --out_dir "${INFLUENCE_OUT}" \
-    --methods less less_small embedding random logra_raw logra_fim logra_raw_small logra_fim_small influcoder iprox \
+    --methods less less_small less_proxy embedding random logra_raw logra_fim logra_raw_small logra_fim_small logra_raw_proxy logra_fim_proxy influcoder iprox \
     --gt_name ground_truth \
     --seq_len "${FLOPS_SEQ_LEN}"
 

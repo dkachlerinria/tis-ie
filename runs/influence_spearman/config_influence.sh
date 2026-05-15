@@ -7,6 +7,9 @@
 export INFLUENCE_MODEL="Qwen/Qwen3-0.6B"
 INFLUENCE_MODEL_SLUG=$(echo "${INFLUENCE_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
+# Proxy Model (smaller architecture used to approximate influence for the main model)
+export PROXY_MODEL="Qwen/Qwen3-0.6B"
+
 # Base Dataset and Task Config
 export BENCHMARK="bbh"
 export TRAIN_DATASET="Harvard-DCML/tulu-v2-197K-processed"
