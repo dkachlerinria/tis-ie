@@ -99,6 +99,13 @@ def load_pool_dataset(
     start_index/n_samples for disjoint train_pool / eval_pool ranges.
     """
     raw = load_dataset(train_dataset_name, split="train")
+    # Shuffle the FULL dataset before slicing so [start_index : start_index+n] is a
+    # uniform random sample across all Tulu source groups.  seed=42 matches the
+    # pipeline-wide convention (bbh_data.py and the other Tulu loaders) so the
+    # encoder's training pool [END_INDEX:END_INDEX+N_TRAIN_P] is drawn from the
+    # SAME shuffled order as the Spearman eval pool [0:END_INDEX], guaranteeing
+    # disjoint-by-index → disjoint-by-content without any source-grouping bias.
+    raw = raw.shuffle(seed=42)
     end = min(start_index + n_samples, len(raw))
     raw = raw.select(range(start_index, end))
 

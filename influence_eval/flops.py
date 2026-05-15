@@ -157,6 +157,25 @@ def flops_airrep(
     )
 
 
+def flops_iprox(
+    *,
+    num_params_proxy: int,
+    grad_dim: int,
+    seq_len: int,
+    num_anchors: int,
+    num_train: int,
+) -> int:
+    """IProX: fwd+bwd through proxy model per sample, then gradient dot products.
+
+    grad_dim = number of active SVD-factor params extracted as the gradient vector
+    (linear_A + linear_B for matched modules).
+    """
+    per_sample = flops_forward_backward(num_params_proxy, seq_len)
+    return (num_anchors + num_train) * per_sample + flops_cosine_matrix(
+        num_anchors, num_train, grad_dim
+    )
+
+
 def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> dict:
     """Dispatch helper for run_experiment.py.
 
@@ -210,6 +229,17 @@ def flops_for_method(method: str, params: dict, seq_len: int = 2048) -> dict:
             num_anchors=params["num_anchors"],
             num_train=params["num_train"],
             emb_dim=params["emb_dim"],
+        )
+        out["total"] = out["inference"] = int(val)
+    elif method == "iprox":
+        # grad_dim recorded since recent fix; fall back to trainable (= total in old saves)
+        grad_dim = params.get("grad_dim", params.get("trainable", params["total"]))
+        val = flops_iprox(
+            num_params_proxy=params["total"],
+            grad_dim=grad_dim,
+            seq_len=seq_len,
+            num_anchors=params["num_anchors"],
+            num_train=params["num_train"],
         )
         out["total"] = out["inference"] = int(val)
     elif method == "influcoder":

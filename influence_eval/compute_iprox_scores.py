@@ -80,6 +80,8 @@ def compute_iprox_scores(
 
     final_bin = os.path.join(proxy_path, "pytorch_model.bin")
     load_proxy_model(proxy_model, final_bin)
+    # count_params before requires_grad_ so "trainable" reflects SVD-factor params only
+    proxy_params = count_params(proxy_model)
     proxy_model.eval()
     for p in proxy_model.parameters():
         p.requires_grad_(True)
@@ -89,6 +91,7 @@ def compute_iprox_scores(
     anchor_samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
 
     dev_grads = []
+    grad_dim = None
     for sample in tqdm(anchor_samples, desc="Dev Gradients"):
         prompt, response = sample["prompt"], sample["response"]
         messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
@@ -99,6 +102,8 @@ def compute_iprox_scores(
 
         g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
         if g is not None:
+            if grad_dim is None:
+                grad_dim = int(g.shape[0])
             dev_grads.append(safe_normalize(g))
         else:
             dev_grads.append(torch.zeros(1))
@@ -136,15 +141,15 @@ def compute_iprox_scores(
     torch.save(scores, out_path)
     logger.info("Saved score matrix: %s shape=%s", out_path, tuple(scores.shape))
 
-    proxy_params = count_params(proxy_model)
     meta = {
         **proxy_params,
         "num_anchors": int(scores.shape[0]),
         "num_train": int(scores.shape[1]),
+        "grad_dim": grad_dim,
         "model_name": proxy_path,
         "sparsity": sparsity,
         "method": "iprox",
-        "measured_flops": None,   # gradient-per-sample scoring; FLOPs not yet tracked
+        "measured_flops": None,
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
 

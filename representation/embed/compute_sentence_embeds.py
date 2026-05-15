@@ -39,6 +39,10 @@ def load_train_dataset(
         )
 
     if end_index is not None:
+        # Shuffle the FULL dataset before slicing so [start_index:end_index] is a
+        # uniform random sample across all source groups.  seed=42 matches
+        # bbh_data.load_bbh_samples and all other Tulu loaders in this pipeline.
+        train_dataset = train_dataset.shuffle(seed=42)
         train_dataset = train_dataset.select(range(start_index, end_index))
 
     if debug:

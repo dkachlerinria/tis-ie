@@ -44,6 +44,11 @@ def load_train_dataset(
 ) -> torch.utils.data.Dataset:
     ds = load_dataset("Harvard-DCML/tulu-v2-197K-processed", split="train")
     end_index = min(end_index, len(ds))
+    # Shuffle the FULL dataset before slicing so [0:end_index] is a uniform
+    # random sample across all source groups (FLAN, ShareGPT, GPT4-Alpaca, ...).
+    # seed=42 is shared with bbh_data.load_bbh_samples and the other Tulu loaders
+    # so every method in this pipeline sees the same sample at index i.
+    ds = ds.shuffle(seed=42)
     ds = ds.select(range(0, end_index))
     ds = ds.map(
         lambda x: encode_with_messages_format(
