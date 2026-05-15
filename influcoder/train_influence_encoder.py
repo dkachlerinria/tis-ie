@@ -618,6 +618,13 @@ if __name__ == "__main__":
     enc_pred  = enc_a  @ enc_e.T
     base_pred = base_a @ base_e.T
 
+    # Offload encoders to CPU before loading the gradient model — avoids
+    # having three large models on GPU simultaneously during GT computation.
+    enc.to("cpu")
+    base_enc.to("cpu")
+    gc.collect()
+    torch.cuda.empty_cache()
+
     sketch_dim = grads_eval_anchors.shape[1]
     enc_sketch  = compute_native_metrics(true_scores_eval, enc_pred,  agg_mode=args.agg_mode)
     base_sketch = compute_native_metrics(true_scores_eval, base_pred, agg_mode=args.agg_mode)
