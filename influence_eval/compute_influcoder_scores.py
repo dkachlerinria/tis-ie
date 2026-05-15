@@ -8,13 +8,14 @@ data loading functions as compute_embedding_scores.py.
 import argparse
 import logging
 import os
+import time
 
 import torch
 from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForCausalLM
 
 from influence_eval.bbh_data import bbh_texts_for_encoder
-from influence_eval.flops_measure import flop_counter, load_phase_flops
+from influence_eval.flops_measure import flop_counter, load_phase_flops, load_phase_timing
 from influence_eval.model_utils import count_params
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
@@ -50,6 +51,8 @@ def compute_influcoder_scores(
     proj_dim: int,
     stocking_flops_path: str,
     training_flops_path: str,
+    stocking_timing_path: str = None,
+    training_timing_path: str = None,
     batch_size: int = 32,
     out_name: str = "influcoder",
 ) -> None:
@@ -63,6 +66,7 @@ def compute_influcoder_scores(
 
     anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
 
+    t0 = time.perf_counter()
     with flop_counter() as counter:
         train_embeds = compute_train_embeddings(
             model=model,
@@ -88,14 +92,26 @@ def compute_influcoder_scores(
             chunk_size=1024,
             normalize=False,
         ).float()
+    inference_time_s = time.perf_counter() - t0
     inference_flops = int(counter.get_total_flops())
+    n_samples = int(anchor_embeds.shape[0] + train_embeds.shape[0])
+    inference_time_per_sample_s = inference_time_s / max(n_samples, 1)
 
     stocking_flops = load_phase_flops(stocking_flops_path)
     training_flops = load_phase_flops(training_flops_path)
     total_flops = stocking_flops + training_flops + inference_flops
+    stocking_time_s = load_phase_timing(stocking_timing_path) if stocking_timing_path else 0.0
+    training_time_s = load_phase_timing(training_timing_path) if training_timing_path else 0.0
+    total_time_s = stocking_time_s + training_time_s + inference_time_s
+
     logger.info(
         "FLOPs — stocking=%.3e, training=%.3e, inference=%.3e, total=%.3e",
         stocking_flops, training_flops, inference_flops, total_flops,
+    )
+    logger.info(
+        "Wall-clock — stocking=%.2fs, training=%.2fs, inference=%.2fs (%.2fms/sample), total=%.2fs",
+        stocking_time_s, training_time_s, inference_time_s,
+        1000 * inference_time_per_sample_s, total_time_s,
     )
     if stocking_flops == 0:
         logger.warning("No stocking FLOPs at %s — was gradient_stocking re-run after instrumentation?",
@@ -125,6 +141,11 @@ def compute_influcoder_scores(
         "training_flops": int(training_flops),
         "inference_flops": int(inference_flops),
         "measured_flops": int(total_flops),
+        "stocking_time_s": float(stocking_time_s),
+        "training_time_s": float(training_time_s),
+        "inference_time_s": float(inference_time_s),
+        "time_per_sample_s": float(inference_time_per_sample_s),
+        "measured_time_s": float(total_time_s),
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
     logger.info("Saved params for FLOPS accounting")
@@ -146,9 +167,13 @@ def parse_args():
     p.add_argument("--proj_dim", type=int, required=True,
                    help="INFLUCODER_PROJ_DIM (for FLOPS).")
     p.add_argument("--stocking_flops_path", required=True, type=str,
-                   help="${INFLUCODER_DB_DIR}/_flops.json — written by gradient_stocking.py.")
+                   help="${INFLUCODER_DB_DIR}/_flops.json — written by gradient_stocking_EXACT.py.")
     p.add_argument("--training_flops_path", required=True, type=str,
                    help="${INFLUCODER_ENCODER_DIR}/_flops.json — written by train_influence_encoder.py.")
+    p.add_argument("--stocking_timing_path", type=str, default=None,
+                   help="${INFLUCODER_DB_DIR}/_timing.json — written by gradient_stocking_EXACT.py.")
+    p.add_argument("--training_timing_path", type=str, default=None,
+                   help="${INFLUCODER_ENCODER_DIR}/_timing.json — written by train_influence_encoder.py.")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--out_name", type=str, default="influcoder")
     return p.parse_args()
@@ -172,6 +197,8 @@ def main():
         proj_dim=args.proj_dim,
         stocking_flops_path=args.stocking_flops_path,
         training_flops_path=args.training_flops_path,
+        stocking_timing_path=args.stocking_timing_path,
+        training_timing_path=args.training_timing_path,
         batch_size=args.batch_size,
         out_name=args.out_name,
     )

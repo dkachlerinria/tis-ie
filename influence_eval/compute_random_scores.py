@@ -7,6 +7,7 @@ is actively anti-correlated with true influence.
 import argparse
 import logging
 import os
+import time
 
 import torch
 
@@ -31,10 +32,13 @@ def main():
     args = parse_args()
     os.makedirs(args.save_dir, exist_ok=True)
 
+    t0 = time.perf_counter()
     g = torch.Generator().manual_seed(args.seed)
     scores = torch.rand(
         (args.num_anchors, args.end_index), generator=g, dtype=torch.float32
     )
+    inference_time_s = time.perf_counter() - t0
+    n_samples = int(scores.shape[0]) + int(scores.shape[1])
 
     out_path = os.path.join(args.save_dir, f"{args.out_name}_scores.pt")
     torch.save(scores, out_path)
@@ -47,6 +51,8 @@ def main():
         "num_train": int(scores.shape[1]),
         "seed": int(args.seed),
         "measured_flops": int(scores.shape[0]) * int(scores.shape[1]),
+        "inference_time_s": float(inference_time_s),
+        "time_per_sample_s": float(inference_time_s / max(n_samples, 1)),
     }
     torch.save(meta, os.path.join(args.save_dir, f"{args.out_name}_params.pt"))
 

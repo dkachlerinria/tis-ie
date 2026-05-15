@@ -131,6 +131,8 @@ def compute_scores(
     logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
     logger.info("Computing %d anchor gradients (proj_dim=%d)", len(anchor_ds), proj_dim)
 
+    import time
+    t0 = time.perf_counter()
     with flop_counter() as counter:
         train_grads = _collect_and_normalize(train_dl, model, proj_dim, project_interval)
         anchor_grads = _collect_and_normalize(anchor_dl, model, proj_dim, project_interval)
@@ -140,8 +142,12 @@ def compute_scores(
             chunk_size=256,
             normalize=False,
         ).float()
+    inference_time_s = time.perf_counter() - t0
     measured_flops = int(counter.get_total_flops())
-    logger.info("Measured FLOPs: %.3e", measured_flops)
+    n_samples = len(anchor_ds) + len(train_ds)
+    time_per_sample_s = inference_time_s / max(n_samples, 1)
+    logger.info("Measured FLOPs: %.3e | Wall-clock: %.2fs (%.2fms/sample)",
+                measured_flops, inference_time_s, 1000 * time_per_sample_s)
 
     if save_grads:
         torch.save(train_grads, os.path.join(save_dir, f"{out_name}_train_grads.pt"))
@@ -156,6 +162,8 @@ def compute_scores(
         "num_train": int(scores.shape[1]),
         "proj_dim": int(proj_dim),
         "measured_flops": measured_flops,
+        "inference_time_s": float(inference_time_s),
+        "time_per_sample_s": float(time_per_sample_s),
     }
     return out_path, meta
 

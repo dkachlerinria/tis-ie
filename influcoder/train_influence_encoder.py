@@ -23,7 +23,8 @@ import json
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
-from influence_eval.flops_measure import flop_counter, save_phase_flops
+import time
+from influence_eval.flops_measure import flop_counter, save_phase_flops, save_phase_timing
 from typing import List, Dict, Sequence
 from collections import deque
 from tqdm import tqdm
@@ -503,12 +504,14 @@ if __name__ == "__main__":
     global_batch_idx = 0
 
     training_total_flops = 0
+    training_total_time_s = 0.0
     for epoch in range(epochs):
         gen = AnchorBatchGenerator(train_anchors_text, train_text, true_scores_train,
                                    args.batch_size, args.n_candidates_per_batch,
                                    args.hard_ratio, seed=42+epoch)
         pbar = tqdm(gen, desc=f"Epoch {epoch+1}/{epochs}", total=n_batches)
 
+        t0_epoch = time.perf_counter()
         with flop_counter() as epoch_counter:
             for batch_idx, (a_text, c_text, labels) in enumerate(pbar):
                 tokenized_a = enc.tokenizer(a_text, padding=True, truncation=True, max_length=enc.max_seq_length, return_tensors="pt").to(device)
@@ -549,6 +552,7 @@ if __name__ == "__main__":
                 optimizer.zero_grad()
 
         training_total_flops += int(epoch_counter.get_total_flops())
+        training_total_time_s += time.perf_counter() - t0_epoch
 
         # Quick Epoch Eval (not counted toward training FLOPs)
         ev = quick_eval_native(enc, eval_anchors_text[:50], eval_text[:200], true_scores_eval[:50, :200],
@@ -562,6 +566,7 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
 
     training_flops = training_total_flops
+    training_time_s = training_total_time_s
 
     # 3. Final Evaluation (not counted toward training FLOPs)
     print("\n" + "=" * 70 + "\n🏁 FINAL EVALUATION\n" + "=" * 70)
@@ -589,7 +594,10 @@ if __name__ == "__main__":
 
     flops_path = os.path.join(args.output_dir, "_flops.json")
     save_phase_flops(flops_path, training_flops)
+    timing_path = os.path.join(args.output_dir, "_timing.json")
+    save_phase_timing(timing_path, training_time_s)
     print(f"   📊 Training FLOPs: {training_flops:.3e}  ({flops_path})")
+    print(f"   ⏱  Training time:  {training_time_s:.1f}s  ({timing_path})")
     print(f"   CountSketch dim={sketch_dim} | eval anchors={len(eval_anchors_text)} pool={len(eval_text)}")
 
     # --- Diagnostic: compute LESS-style GT scores on the same eval samples.

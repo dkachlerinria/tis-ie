@@ -44,7 +44,8 @@ if _REPO_ROOT not in sys.path:
 
 from common.data import construct_test_sample, encode_with_messages_format
 from influence_eval.bbh_data import load_bbh_samples
-from influence_eval.flops_measure import flop_counter, add_phase_flops
+import time
+from influence_eval.flops_measure import flop_counter, add_phase_flops, add_phase_timing
 from influence_eval.model_utils import load_base_with_fresh_lora
 from representation.less.compute_less_embeds import (
     get_number_of_trainable_params,
@@ -270,6 +271,7 @@ def stock_split(
 
     dataloader = torch.utils.data.DataLoader(ds, batch_size=1, shuffle=False)
 
+    t0 = time.perf_counter()
     with flop_counter() as counter:
         grads = collect_grads_countsketch(
             dataloader=dataloader,
@@ -281,6 +283,7 @@ def stock_split(
         grads = normalize_embeddings_in_chunks(
             grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False
         )
+    split_time_s = time.perf_counter() - t0
     split_flops = int(counter.get_total_flops())
 
     # Save
@@ -291,6 +294,7 @@ def stock_split(
     with open(inputs_path, "w", encoding="utf-8") as f:
         json.dump(input_dicts, f, ensure_ascii=False)
 
+    time_per_sample_s = split_time_s / max(grads.shape[0], 1)
     meta = {
         "proj_dim": int(proj_dim),
         "proj_seed": int(proj_seed),
@@ -299,15 +303,22 @@ def stock_split(
         "dataset": dataset,
         "start_index": int(start_index),
         "formatter": formatter,
+        "time_s": float(split_time_s),
+        "time_per_sample_s": float(time_per_sample_s),
     }
     meta_path = os.path.join(output_dir, f"{output_name}_meta.json")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
-    # Accumulate FLOPS across splits (same pattern as old gradient_stocking.py)
+    # Accumulate FLOPs and wall-clock time across splits
     flops_json = os.path.join(output_dir, "_flops.json")
+    timing_json = os.path.join(output_dir, "_timing.json")
     total_flops = add_phase_flops(flops_json, split_flops)
-    logger.info("FLOPs this split: %.3e | cumulative: %.3e", split_flops, total_flops)
+    total_time_s = add_phase_timing(timing_json, split_time_s)
+    logger.info(
+        "FLOPs this split: %.3e | cumulative: %.3e | time: %.2fs (%.2fms/sample)",
+        split_flops, total_flops, split_time_s, 1000 * time_per_sample_s,
+    )
 
     logger.info("Saved %s (grads %s, inputs %s, meta %s)", split, grads.shape, len(input_dicts), meta)
     return grads_path

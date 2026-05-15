@@ -6,6 +6,7 @@ contract matches the gradient methods.
 import argparse
 import logging
 import os
+import time
 
 import torch
 from sentence_transformers import SentenceTransformer
@@ -50,6 +51,7 @@ def main():
     # Load anchor texts outside FlopCounterMode (no GPU work).
     anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
 
+    t0 = time.perf_counter()
     with flop_counter() as counter:
         # Train embeddings (sliced to [0:end_index])
         train_embeds = compute_train_embeddings(
@@ -78,12 +80,18 @@ def main():
             chunk_size=1024,
             normalize=False,
         ).float()
+    inference_time_s = time.perf_counter() - t0
     measured_flops = int(counter.get_total_flops())
+    n_samples = int(anchor_embeds.shape[0] + train_embeds.shape[0])
+    time_per_sample_s = inference_time_s / max(n_samples, 1)
     logger.info(
-        "Train embeds: %s, anchor embeds: %s, measured FLOPs: %.3e",
+        "Train embeds: %s, anchor embeds: %s, measured FLOPs: %.3e | Wall-clock: %.2fs (%.2fms/sample, batch_size=%d)",
         tuple(train_embeds.shape),
         tuple(anchor_embeds.shape),
         measured_flops,
+        inference_time_s,
+        1000 * time_per_sample_s,
+        args.batch_size,
     )
 
     out_path = os.path.join(args.save_dir, f"{args.out_name}_scores.pt")
@@ -98,6 +106,9 @@ def main():
         "num_train": int(scores.shape[1]),
         "emb_dim": int(train_embeds.shape[1]),
         "measured_flops": measured_flops,
+        "inference_time_s": float(inference_time_s),
+        "time_per_sample_s": float(time_per_sample_s),
+        "batch_size": int(args.batch_size),
     }
     torch.save(meta, os.path.join(args.save_dir, f"{args.out_name}_params.pt"))
 

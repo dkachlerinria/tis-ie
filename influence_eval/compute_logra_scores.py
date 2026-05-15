@@ -11,6 +11,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 
 import torch
 
@@ -58,6 +59,7 @@ def compute_logra_scores(
     anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
 
     # Shared encoding cost (train + anchors + FIM accumulation).
+    t0_shared = time.perf_counter()
     with flop_counter() as enc_counter:
         logger.info("Encoding %d train samples (accumulating FIM)...", len(train_ds))
         train_embeds = logra.encode(train_ds, batch_size=batch_size, is_test=False)
@@ -69,16 +71,20 @@ def compute_logra_scores(
         logger.info("Encoding %d anchors (raw, is_test=False)...", len(anchor_ds))
         raw_anchor_embeds = logra.encode(anchor_ds, batch_size=batch_size, is_test=False)
         logger.info("Raw anchor embeds shape: %s", raw_anchor_embeds.shape)
+    shared_time_s = time.perf_counter() - t0_shared
     shared_flops = int(enc_counter.get_total_flops())
 
     # logra_raw marginal cost: raw similarity only.
+    t0_raw = time.perf_counter()
     with flop_counter() as raw_counter:
         logger.info("Computing logra_raw scores (no FIM)...")
         raw_sim = logra.similarity(raw_anchor_embeds, train_embeds, mode="cosine")
         raw_scores = torch.from_numpy(raw_sim).float()
+    raw_marginal_time_s = time.perf_counter() - t0_raw
     raw_marginal_flops = int(raw_counter.get_total_flops())
 
     # logra_fim marginal cost: FIM preconditioning + FIM similarity.
+    t0_fim = time.perf_counter()
     with flop_counter() as fim_counter:
         logra.fim = train_fim
         precond_anchor_embeds = (
@@ -90,13 +96,20 @@ def compute_logra_scores(
         logger.info("Computing logra_fim scores (FIM-preconditioned)...")
         fim_sim = logra.similarity(precond_anchor_embeds, train_embeds, mode="cosine")
         fim_scores = torch.from_numpy(fim_sim).float()
+    fim_marginal_time_s = time.perf_counter() - t0_fim
     fim_marginal_flops = int(fim_counter.get_total_flops())
 
     raw_flops = shared_flops + raw_marginal_flops
     fim_flops = shared_flops + fim_marginal_flops
+    raw_time_s = shared_time_s + raw_marginal_time_s
+    fim_time_s = shared_time_s + fim_marginal_time_s
     logger.info(
         "FLOPs — shared=%.3e, raw_total=%.3e, fim_total=%.3e",
         shared_flops, raw_flops, fim_flops,
+    )
+    logger.info(
+        "Wall-clock — shared=%.2fs, raw_total=%.2fs, fim_total=%.2fs",
+        shared_time_s, raw_time_s, fim_time_s,
     )
 
     raw_path = os.path.join(save_dir, f"logra_raw{out_suffix}_scores.pt")
@@ -108,6 +121,7 @@ def compute_logra_scores(
 
     total = sum(p.numel() for p in logra.model.parameters())
     trainable = sum(p.numel() for p in logra.model.parameters() if p.requires_grad)
+    n_samples = int(raw_scores.shape[0] + raw_scores.shape[1])
     base_params = {
         "total": total,
         "trainable": trainable,
@@ -116,11 +130,21 @@ def compute_logra_scores(
         "model_name": model_name,
     }
     torch.save(
-        {**base_params, "measured_flops": raw_flops},
+        {
+            **base_params,
+            "measured_flops": raw_flops,
+            "inference_time_s": float(raw_time_s),
+            "time_per_sample_s": float(raw_time_s / max(n_samples, 1)),
+        },
         os.path.join(save_dir, f"logra_raw{out_suffix}_params.pt"),
     )
     torch.save(
-        {**base_params, "measured_flops": fim_flops},
+        {
+            **base_params,
+            "measured_flops": fim_flops,
+            "inference_time_s": float(fim_time_s),
+            "time_per_sample_s": float(fim_time_s / max(n_samples, 1)),
+        },
         os.path.join(save_dir, f"logra_fim{out_suffix}_params.pt"),
     )
     logger.info("Saved params for both variants")

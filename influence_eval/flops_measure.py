@@ -43,3 +43,30 @@ def add_phase_flops(path: str, flops: int) -> int:
     total = load_phase_flops(path) + int(flops)
     save_phase_flops(path, total)
     return total
+
+
+# ---------------------------------------------------------------------------
+# Wall-clock timing — parallel API to the FLOPs helpers above.
+# Used alongside flop_counter() to expose batching / GPU-utilization effects
+# that FLOPs alone cannot show (FLOPs are batch-size-invariant).
+# ---------------------------------------------------------------------------
+
+def save_phase_timing(path: str, time_s: float) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump({"time_s": float(time_s)}, f)
+
+
+def load_phase_timing(path: str) -> float:
+    """Return the saved wall-clock seconds, or 0.0 if the file does not exist."""
+    if not os.path.exists(path):
+        return 0.0
+    with open(path) as f:
+        return float(json.load(f)["time_s"])
+
+
+def add_phase_timing(path: str, time_s: float) -> float:
+    """Accumulate into an existing _timing.json. Returns the new total."""
+    total = load_phase_timing(path) + float(time_s)
+    save_phase_timing(path, total)
+    return total

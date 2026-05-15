@@ -12,11 +12,12 @@ FLOPs accounting matches influcoder's multi-phase pattern:
 import argparse
 import logging
 import os
+import time
 
 import torch
 
 from influence_eval.bbh_data import bbh_texts_for_encoder
-from influence_eval.flops_measure import flop_counter, load_phase_flops
+from influence_eval.flops_measure import flop_counter, load_phase_flops, load_phase_timing
 from influence_eval.model_utils import count_params
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
@@ -41,6 +42,10 @@ def parse_args():
                    help="Path to _flops_sft.json (stage 2). Defaults to 0 if missing.")
     p.add_argument("--training_flops_path", type=str, default=None,
                    help="Path to _flops_train.json (stage 3). Defaults to 0 if missing.")
+    p.add_argument("--sft_timing_path", type=str, default=None,
+                   help="Path to _timing_sft.json (stage 2). Defaults to 0 if missing.")
+    p.add_argument("--training_timing_path", type=str, default=None,
+                   help="Path to _timing_train.json (stage 3). Defaults to 0 if missing.")
     return p.parse_args()
 
 
@@ -55,6 +60,7 @@ def main():
     # Anchor texts (BBH [0:num_anchors]) — outside flop_counter (no GPU work).
     anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
 
+    t0 = time.perf_counter()
     with flop_counter() as counter:
         train_embeds = compute_train_embeddings(
             model=airrep,  # AirRep.encode is SentenceTransformer-compatible
@@ -80,14 +86,25 @@ def main():
             chunk_size=1024,
             normalize=False,
         ).float()
+    inference_time_s = time.perf_counter() - t0
     inference_flops = int(counter.get_total_flops())
+    n_samples = int(anchor_embeds.shape[0] + train_embeds.shape[0])
+    inference_time_per_sample_s = inference_time_s / max(n_samples, 1)
 
     sft_flops = load_phase_flops(args.sft_flops_path) if args.sft_flops_path else 0
     training_flops = load_phase_flops(args.training_flops_path) if args.training_flops_path else 0
     total_flops = sft_flops + training_flops + inference_flops
+    sft_time_s = load_phase_timing(args.sft_timing_path) if args.sft_timing_path else 0.0
+    training_time_s = load_phase_timing(args.training_timing_path) if args.training_timing_path else 0.0
+    total_time_s = sft_time_s + training_time_s + inference_time_s
+
     logger.info(
         "FLOPs — sft=%.3e, training=%.3e, inference=%.3e, total=%.3e",
         sft_flops, training_flops, inference_flops, total_flops,
+    )
+    logger.info(
+        "Wall-clock — inference=%.2fs (%.2fms/sample), total=%.2fs",
+        inference_time_s, 1000 * inference_time_per_sample_s, total_time_s,
     )
     if sft_flops == 0:
         logger.warning("No SFT FLOPs at %s — was airrep.sft_subsets re-run after instrumentation?",
@@ -111,6 +128,9 @@ def main():
         "training_flops": int(training_flops),
         "inference_flops": int(inference_flops),
         "measured_flops": int(total_flops),
+        "inference_time_s": float(inference_time_s),
+        "time_per_sample_s": float(inference_time_per_sample_s),
+        "measured_time_s": float(total_time_s),
     }
     torch.save(meta, os.path.join(args.save_dir, f"{args.out_name}_params.pt"))
     logger.info("Saved params for FLOPS accounting")

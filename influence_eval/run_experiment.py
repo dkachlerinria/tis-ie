@@ -34,19 +34,23 @@ def _load(out_dir: str, name: str):
 
 def _markdown_table(results: dict) -> str:
     lines = [
-        "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) | Total FLOPS | Inf. FLOPS |",
-        "|---|---|---|---|---|---|---|",
+        "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) | Total FLOPS | Inf. FLOPS | Inf. Time (s) | Time/Sample (ms) |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for method, r in results["methods"].items():
         flops_tot = r.get("flops_total", 0)
         flops_inf = r.get("flops_inference", 0)
+        inf_time  = r.get("inference_time_s", float("nan"))
+        tps_ms    = r.get("time_per_sample_ms", float("nan"))
         lines.append(
             f"| {method} | {r['per_anchor']['mean']:.4f} | "
             f"{r['per_anchor']['std']:.4f} | "
             f"{r['aggregated_mean']:.4f} | "
             f"{r['aggregated_max']:.4f} | "
             f"{flops_tot:.3e} | "
-            f"{flops_inf:.3e} |"
+            f"{flops_inf:.3e} | "
+            f"{inf_time:.2f} | "
+            f"{tps_ms:.2f} |"
         )
     return "\n".join(lines)
 
@@ -83,23 +87,28 @@ def run(out_dir: str, methods: List[str], seq_len: int, gt_name: str = "ground_t
             )
         metrics = all_metrics(scores, gt_scores)
         flops_dict = flops_for_method(method, params, seq_len=seq_len)
+        inf_time_s = params.get("inference_time_s", float("nan"))
+        tps_s      = params.get("time_per_sample_s", float("nan"))
         results["methods"][method] = {
             **metrics,
             "flops_total": flops_dict["total"],
             "flops_inference": flops_dict["inference"],
+            "inference_time_s": inf_time_s,
+            "time_per_sample_ms": tps_s * 1000 if tps_s == tps_s else float("nan"),
             "params_meta": {
                 k: int(v) if isinstance(v, (int, float)) and k != "model_name" else v
                 for k, v in params.items()
             },
         }
         logger.info(
-            "%s: per-anchor mean=%.4f agg_mean=%.4f agg_max=%.4f tot_flops=%.3e inf_flops=%.3e",
+            "%s: per-anchor mean=%.4f agg_mean=%.4f agg_max=%.4f tot_flops=%.3e inf_flops=%.3e inf_time=%.2fs",
             method,
             metrics["per_anchor"]["mean"],
             metrics["aggregated_mean"],
             metrics["aggregated_max"],
             flops_dict["total"],
             flops_dict["inference"],
+            inf_time_s if inf_time_s == inf_time_s else 0.0,
         )
 
     # Also report ground-truth's own self-FLOPS for context
