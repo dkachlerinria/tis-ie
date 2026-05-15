@@ -77,52 +77,16 @@ def get_encode_function(raw_datasets, tokenizer, max_seq_length):
     )
 
 def encode_with_messages_format(example, tokenizer, max_seq_length):
-    """Encode a sample using the unified format_instruction.
+    """Encode a sample using the same format as the ground-truth computation.
 
-    Reduces all callers (single-turn FLAN/dolci/platinum, or messages-format
-    items with one user → one assistant turn) to the same chat-templated
-    rendering used by gradient_stocking, encoder training, SFT training, and
-    sacred eval. Returns torch tensors for HF datasets.map() compatibility.
+    Delegates to common.data.encode_with_messages_format so all pipeline
+    methods (ground truth, LESS, IProX) produce identical tokenizations with
+    <|system|> / <|user|> / <|assistant|> delimiters.
     """
     import os, sys
     _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if _root not in sys.path:
         sys.path.insert(0, _root)
-    from formatting import format_instruction, ensure_chat_template
-    import torch
-
-    ensure_chat_template(tokenizer)
-
-    # Normalize input → (prompt, response).
-    messages = example.get('messages')
-    if messages:
-        # Take last assistant turn as response, everything before its first
-        # appearance as the user/system prelude collapsed into a single user
-        # turn. For our actual pipeline (single-turn data) this is equivalent
-        # to {prompt, response}.
-        last_ass_idx = next(
-            (i for i in range(len(messages) - 1, -1, -1)
-             if messages[i].get("role") == "assistant"
-             and messages[i].get("content")
-             and not messages[i]["content"].isspace()),
-            None,
-        )
-        if last_ass_idx is None:
-            return {"input_ids": [], "attention_mask": [], "labels": []}
-        response = messages[last_ass_idx]["content"]
-        # Concatenate prior turns (user/system) into the user-content prompt.
-        prior = [m for m in messages[:last_ass_idx] if m.get("role") in ("user", "system")]
-        prompt = "\n\n".join(m["content"] for m in prior if m.get("content")) or ""
-    else:
-        prompt = example.get('prompt') or ''
-        response = example.get('completion') or example.get('response') or ''
-
-    if not prompt or not response or response.isspace():
-        return {"input_ids": [], "attention_mask": [], "labels": []}
-
-    out = format_instruction(prompt, response, tokenizer, max_seq_length)
-    return {
-        "input_ids":      torch.tensor(out["input_ids"]),
-        "attention_mask": torch.tensor(out["attention_mask"]),
-        "labels":         torch.tensor(out["labels"]),
-    }
+    from common.data import encode_with_messages_format as _encode
+    return _encode(example=example, tokenizer=tokenizer,
+                   max_seq_length=max_seq_length, include_response=True)

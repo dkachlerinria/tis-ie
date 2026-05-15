@@ -157,12 +157,10 @@ def _resolve_target_map(model: nn.Module,
                                      target_modules: List[str]) -> Dict[str, nn.Linear]:
     mapping: Dict[str, nn.Linear] = {}
     for name, module in model.named_modules():
-        if isinstance(module, nn.Linear):
-            # Standard match or PEFT match (e.g. q_proj.base_layer)
-            if any(name.endswith(sfx) or name.endswith(f"{sfx}.base_layer") for sfx in target_modules):
-                mapping[name] = module
+        if isinstance(module, nn.Linear) and any(name.endswith(sfx) for sfx in target_modules):
+            mapping[name] = module
     if not mapping:
-        logger.warning("[IPSVD] No matching Linear modules found. Checked for standard suffixes and PEFT .base_layer wrappers.")
+        logger.warning("[IPSVD] No matching Linear modules found by suffix.")
     return mapping
 
 def collect_IPSVD_probes(
@@ -322,7 +320,7 @@ def init_proxy_model_with_IPSVD(
 
     base_targets: Dict[str, nn.Linear] = {
         name: mod for name, mod in base_model.named_modules()
-        if isinstance(mod, nn.Linear) and any(name.endswith(sfx) or name.endswith(f"{sfx}.base_layer") for sfx in target_modules)
+        if isinstance(mod, nn.Linear) and any(name.endswith(sfx) for sfx in target_modules)
     }
     if not base_targets:
         logger.warning("No base target linear modules found; abort init.")

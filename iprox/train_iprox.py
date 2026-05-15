@@ -104,6 +104,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--weight_decay', type=float, default=0.01)
     parser.add_argument('--lambda_anchor', type=float, default=0.0)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
     parser.add_argument('--max_seq_length', type=int, default=512,
@@ -129,6 +130,10 @@ def main():
         torch_dtype=torch.bfloat16,
         device_map="auto",
     )
+    embedding_size = target_model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        logger.info(f"Resizing embeddings {embedding_size} → {len(tokenizer)}")
+        target_model.resize_token_embeddings(len(tokenizer))
 
     # 2. Load Training Pool Only.
     # No BBH anchors: lambda_anchor=0 means no KD anchor loss (matches original IProX).
@@ -160,6 +165,10 @@ def main():
 
     # 3. Initialize Proxy Model
     os.makedirs(args.output_dir, exist_ok=True)
+
+    if os.path.exists(os.path.join(args.output_dir, "final_pytorch_model.bin")):
+        logger.info("Final checkpoint already exists. Exiting.")
+        sys.exit(0)
 
     # Diagnostic: Check module names
     linear_modules = [n for n, m in target_model.named_modules() if isinstance(m, torch.nn.Linear)]
@@ -200,18 +209,14 @@ def main():
         logger.info(f"💾 Saved IPSVD init checkpoint to {checkpoint_path}")
 
     # 4. Training Setup
-    # IPSVD wraps the original Linear so the LinearSVD lives at "<name>.base_layer".
-    # We pair the target's Linear with the proxy's nested LinearSVD.
     layer_pairs = []
     proxy_dict = dict(proxy_model.named_modules())
     for name, t_mod in target_model.named_modules():
         if not any(name.endswith(tm) for tm in target_modules):
             continue
-        for proxy_path in (name, f"{name}.base_layer"):
-            cand = proxy_dict.get(proxy_path)
-            if cand is not None and hasattr(cand, "linear_A"):
-                layer_pairs.append((t_mod, cand))
-                break
+        cand = proxy_dict.get(name)
+        if cand is not None and hasattr(cand, "linear_A"):
+            layer_pairs.append((t_mod, cand))
     logger.info(f"[IPSVD] Paired {len(layer_pairs)} target/proxy layers for gradient alignment.")
     if not layer_pairs:
         raise RuntimeError(
@@ -219,7 +224,7 @@ def main():
             "the model's layer naming and that init_proxy_model_with_IPSVD ran successfully."
         )
 
-    optimizer = AdamW(filter(lambda p: p.requires_grad, proxy_model.parameters()), lr=args.lr)
+    optimizer = AdamW(filter(lambda p: p.requires_grad, proxy_model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
 
     # Gradient checkpointing on the TARGET model only.
     # The proxy model must NOT use GC: GC on a model with retain_graph=True +
