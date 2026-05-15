@@ -9,7 +9,7 @@ export END_INDEX=100
 
 # Smaller ground-truth projection (still high relative to LESS@8192).
 # Use validate_projection.sh once to confirm this is fine.
-export GT_PROJ_DIM=65536
+export GT_PROJ_DIM=262144
 
 # Project after every sample to minimize gradient accumulation in memory
 export PROJECT_INTERVAL=1
@@ -18,9 +18,9 @@ export PROJECT_INTERVAL=1
 
 # Tiny influcoder overrides
 export INFLUCODER_RUN_MODE="small"
-export INFLUCODER_N_TRAIN_A=100
+export INFLUCODER_N_TRAIN_A=500
 export INFLUCODER_N_EVAL_A=100
-export INFLUCODER_N_TRAIN_P=200
-export INFLUCODER_N_EVAL_P=200
+export INFLUCODER_N_TRAIN_P=1000
+export INFLUCODER_N_EVAL_P=500
 
 

@@ -6,7 +6,6 @@ Trains an encoder on pre-stocked gradients and evaluates on:
 """
 
 import os
-import sqlite3
 import sys
 import torch
 import torch.nn as nn
@@ -57,7 +56,7 @@ def seed_everything(seed=42):
 MODES = {
     'tiny':   {'train_a': 3,    'eval_a': 2,    'train_p': 5,    'eval_p': 3,    'epochs': 1, 'max_train_pool': 10},
     'quick':  {'train_a': 100,  'eval_a': 100,  'train_p': 200,  'eval_p': 200,  'epochs': 2, 'max_train_pool': 5000},
-    'small':  {'train_a': 2000,  'eval_a': 20,  'train_p': 4000, 'eval_p': 50,  'epochs': 1, 'max_train_pool': 10000},
+    'small':  {'train_a': 2000,  'eval_a': 50,  'train_p': 4000, 'eval_p': 100,  'epochs': 10, 'max_train_pool': 10000},
     'medium': {'train_a': 2000, 'eval_a': 500,  'train_p': 6000, 'eval_p': 1000, 'epochs': 5, 'max_train_pool': 10000},
     'full':   {'train_a': 4000, 'eval_a': 1000, 'train_p': 16000, 'eval_p': 4000, 'epochs': 2, 'max_train_pool': None}
 }
@@ -98,116 +97,82 @@ def check_gradient_diagnostics(name: str, grads: np.ndarray):
         print(f"          -> Mean: {valid_grads.mean():.6e} | Std: {valid_grads.std():.6e}")
 
 # =========================================================================
-# Database Loading
+# Stocked-split Loading (file-based; output of gradient_stocking_EXACT.py)
 # =========================================================================
 
-def load_all_doc_ids(db_path: str, seed: int = 42) -> list[str]:
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"❌ SQLite database not found at: {os.path.abspath(db_path)}\n"
-                                f"   Make sure you have run the gradient stocking script for this configuration!")
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT DISTINCT p.doc_id FROM projections p
-        INNER JOIN documents d ON d.doc_id = p.doc_id
-        WHERE p.projection_seed = ? ORDER BY p.doc_id
-    """, (seed,))
-    doc_ids =[row[0] for row in cur.fetchall()]
-    conn.close()
-    return doc_ids
+def load_stocked_split(prefix: str) -> tuple[list[dict], np.ndarray, dict]:
+    """Load a stocked split written by gradient_stocking_EXACT.py.
 
-def load_stocked_samples_by_ids(db_path: str, doc_ids: list[str], seed: int = 42) -> tuple[list, np.ndarray]:
-    if not doc_ids: return [], np.array([])
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"❌ SQLite database not found at: {os.path.abspath(db_path)}")
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT value FROM metadata WHERE key = 'proj_dim'")
-        proj_dim = int(cur.fetchone()[0])
-    except:
-        raise ValueError("metadata 'proj_dim' missing – cannot infer gradient dtype")
-    
-    BATCH_SIZE = 500
-    row_dict = {}
-    for i in range(0, len(doc_ids), BATCH_SIZE):
-        batch_ids = doc_ids[i:i + BATCH_SIZE]
-        placeholders = ",".join("?" * len(batch_ids))
-        cur.execute(f"""
-            SELECT d.doc_id, d.prompt, d.response, p.projected_gradient
-            FROM documents d JOIN projections p ON d.doc_id = p.doc_id
-            WHERE p.projection_seed = ? AND d.doc_id IN ({placeholders})
-        """, (seed, *batch_ids))
-        for row in cur.fetchall():
-            row_dict[row[0]] = row
-    conn.close()
-    
-    samples = []
-    gradients =[]
-    dtype = None
-    
-    for doc_id in doc_ids:
-        if doc_id in row_dict:
-            _, prompt, response, grad_blob = row_dict[doc_id]
-            samples.append((prompt, response))
-            
-            if dtype is None:
-                blob_len = len(grad_blob)
-                if blob_len == proj_dim * 2: dtype = np.float16
-                elif blob_len == proj_dim * 4: dtype = np.float32
-                elif blob_len == proj_dim * 8: dtype = np.float64
-                else:
-                    raise ValueError(f"Cannot infer dtype for {doc_id}: blob_len={blob_len}, proj_dim={proj_dim}")
+    Expects three files at the given prefix:
+      {prefix}_grads.pt    — torch tensor [N, proj_dim], L2-normalized
+      {prefix}_inputs.json — list of N input dicts (same order as grads)
+      {prefix}_meta.json   — metadata (proj_dim, formatter, split, etc.)
 
-            grad_arr = np.frombuffer(grad_blob, dtype=dtype)
-            if dtype == np.float16: grad_arr = grad_arr.astype(np.float32)
-            gradients.append(grad_arr)
-    
-    return samples, np.array(gradients) if gradients else np.array([])
+    Returns (input_dicts, grads_np, meta).  The input dicts are exactly the
+    structures passed to construct_test_sample (anchors) or
+    encode_with_messages_format (pool) during stocking — so they can be
+    re-tokenized identically here for the GT diagnostic.
+    """
+    grads_path = f"{prefix}_grads.pt"
+    inputs_path = f"{prefix}_inputs.json"
+    meta_path = f"{prefix}_meta.json"
+    for pth in (grads_path, inputs_path, meta_path):
+        if not os.path.exists(pth):
+            raise FileNotFoundError(
+                f"❌ Stocked split file not found: {pth}\n"
+                f"   Run gradient_stocking_EXACT.py for this split first."
+            )
+    grads = torch.load(grads_path, weights_only=False)
+    if isinstance(grads, torch.Tensor):
+        grads_np = grads.cpu().float().numpy()
+    else:
+        grads_np = np.asarray(grads, dtype=np.float32)
+    with open(inputs_path, "r", encoding="utf-8") as f:
+        input_dicts = json.load(f)
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    if len(input_dicts) != grads_np.shape[0]:
+        raise ValueError(
+            f"Length mismatch in {prefix}: {len(input_dicts)} inputs vs {grads_np.shape[0]} grads"
+        )
+    return input_dicts, grads_np, meta
+
 
 _ENCODER_PREFIX = (
     "Instruct: Given a sample, find the passages closest to that sample.\nQuery:"
 )
 
 
-def anchor_samples_to_texts(samples) -> list[str]:
-    """Format BBH anchor (prompt, response) pairs for the encoder.
+def anchor_dicts_to_texts(input_dicts: list[dict]) -> list[str]:
+    """Format BBH anchor input dicts {"prompts": p, "labels": r} for the encoder.
 
-    Matches the format used by bbh_texts_for_encoder() in bbh_data.py so the
-    encoder sees identical text at training time and final-eval time.
+    Matches bbh_texts_for_encoder() in bbh_data.py so the encoder sees identical
+    text at training time and final-pipeline-eval time.
     """
-    return [f"{_ENCODER_PREFIX} {p} {r}".strip() for p, r in samples]
+    return [f"{_ENCODER_PREFIX} {d['prompts']} {d['labels']}".strip() for d in input_dicts]
 
 
-def pool_samples_to_texts(samples, tokenizer=None) -> list[str]:
-    """Format Tulu pool entries for the encoder.
+def pool_dicts_to_texts(input_dicts: list[dict], tokenizer=None) -> list[str]:
+    """Format Tulu pool input dicts {"messages": [...]} for the encoder.
 
-    When the prompt field is a JSON-encoded messages list (stored by
-    render_for_storage), reconstructs the full conversation exactly as
-    _concat_messages() in compute_sentence_embeds.py does, preserving system
-    turns and multi-turn structure.  Falls back to a simple user/assistant wrap
-    for plain-string prompts (BBH or legacy DBs).
+    Renders via the same logic as _concat_messages() in compute_sentence_embeds.py
+    so encoder text matches the final-pipeline-eval format exactly.
     """
     eos = tokenizer.eos_token if (tokenizer and tokenizer.eos_token) else ""
-    texts = []
-    for p, r in samples:
-        try:
-            msgs = json.loads(p)
-            if isinstance(msgs, list):
-                parts = []
-                for m in msgs:
-                    role, content = m.get("role", ""), m.get("content", "").strip()
-                    if role == "system":
-                        parts.append(f"<|system|>\n{content}\n")
-                    elif role == "user":
-                        parts.append(f"<|user|>\n{content}\n")
-                    elif role == "assistant":
-                        parts.append(f"<|assistant|>\n{content}{eos}\n")
-                texts.append("".join(parts).strip())
-                continue
-        except (json.JSONDecodeError, ValueError, KeyError):
-            pass
-        texts.append(f"<|user|>\n{p}\n<|assistant|>\n{r}{eos}")
+    texts: list[str] = []
+    for d in input_dicts:
+        msgs = d.get("messages", [])
+        parts: list[str] = []
+        for m in msgs:
+            role = m.get("role", "")
+            content = m.get("content", "").strip()
+            if role == "system":
+                parts.append(f"<|system|>\n{content}\n")
+            elif role == "user":
+                parts.append(f"<|user|>\n{content}\n")
+            elif role == "assistant":
+                parts.append(f"<|assistant|>\n{content}{eos}\n")
+        texts.append("".join(parts).strip())
     return texts
 
 # =========================================================================
@@ -423,13 +388,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--run_mode', type=str, default="quick", choices=['tiny', 'quick', 'small', 'medium', 'full'])
     parser.add_argument('--encoder_model', type=str, default="jhu-clsp/ettin-encoder-150m")
-    parser.add_argument('--gradient_model', type=str, default="Qwen/Qwen3-0.6B",
+    parser.add_argument('--gradient_model', type=str, default="Qwen/Qwen3-0.6B-Base",
                         help="Model whose chat template is used to format text (must match gradient_stocking).")
-    parser.add_argument('--anchor_train_db', type=str, required=True)
-    parser.add_argument('--anchor_eval_db', type=str, required=True)
-    parser.add_argument('--pool_train_db', type=str, required=True)
-    parser.add_argument('--pool_eval_db', type=str, required=True)
-    parser.add_argument('--gradient_seed', type=int, default=42)
+    parser.add_argument('--anchor_train_prefix', type=str, required=True,
+                        help="Prefix (no extension) of the stocked train_anchors files written by gradient_stocking_EXACT.py.")
+    parser.add_argument('--anchor_eval_prefix', type=str, required=True)
+    parser.add_argument('--pool_train_prefix', type=str, required=True)
+    parser.add_argument('--pool_eval_prefix', type=str, required=True)
+    parser.add_argument('--gradient_seed', type=int, default=42,
+                        help="Kept for backward-compat naming; the projection seed is set at stocking time.")
     parser.add_argument('--batch_size', type=int, default=12)
     parser.add_argument('--n_candidates_per_batch', type=int, default=15)
     parser.add_argument('--hard_ratio', type=float, default=0.0)
@@ -441,14 +408,15 @@ if __name__ == "__main__":
     parser.add_argument('--alpha', type=float, default=0.5, help="Weight for Pearson loss (1-alpha for secondary loss)")
     parser.add_argument('--loss_mode', type=str, default='kl', choices=['kl', 'mse'], help="Secondary loss: 'kl' (ranking) or 'mse' (ablation)")
     parser.add_argument('--output_dir', type=str, default="./checkpoints/influence_encoder")
-    # LoRA / gradient config — must match gradient_stocking so GT scores are comparable
-    parser.add_argument('--lora_rank', type=int, default=16)
-    parser.add_argument('--lora_alpha', type=int, default=32)
+    # LoRA / GT config — must match gradient_stocking_EXACT so the end-of-training
+    # GT diagnostic computes gradients with the same fresh-LoRA as the stocking did.
+    parser.add_argument('--lora_rank', type=int, default=128)
+    parser.add_argument('--lora_alpha', type=int, default=512)
     parser.add_argument('--lora_dropout', type=float, default=0.1)
     parser.add_argument('--lora_seed', type=int, default=0)
     parser.add_argument('--lora_target_modules', type=str, default='all-linear')
     parser.add_argument('--gt_proj_dim', type=int, default=65536,
-                        help='Projection dim for end-of-training GT scores (matches GT_PROJ_DIM in config).')
+                        help='Projection dim for end-of-training GT scores (typically GT_PROJ_DIM from config).')
     parser.add_argument('--project_interval', type=int, default=1)
 
 
@@ -462,31 +430,7 @@ if __name__ == "__main__":
     print(f"🔬 Influence-Encoder Training (Mode: {args.run_mode.upper()})")
     print("=" * 70)
     
-    # 1. Load Data
-    train_anchor_ids = load_all_doc_ids(args.anchor_train_db, args.gradient_seed)
-    eval_anchor_ids  = load_all_doc_ids(args.anchor_eval_db,  args.gradient_seed)
-    train_pool_ids   = load_all_doc_ids(args.pool_train_db,   args.gradient_seed)
-    eval_pool_ids    = load_all_doc_ids(args.pool_eval_db,    args.gradient_seed)
-    
-    print(f"   📊 Database Summary (Seed {args.gradient_seed}):")
-    print(f"      - Train Anchors: {len(train_anchor_ids)} IDs")
-    print(f"      - Eval Anchors:  {len(eval_anchor_ids)} IDs")
-    print(f"      - Train Pool:    {len(train_pool_ids)} IDs")
-    print(f"      - Eval Pool:     {len(eval_pool_ids)} IDs")
-
-    if not train_pool_ids:
-        print(f"   ⚠️ WARNING: No IDs found in {args.pool_train_db}. Is the seed correct?")
-
-    random.shuffle(train_anchor_ids)
-    random.shuffle(eval_anchor_ids)
-    random.shuffle(train_pool_ids)
-    random.shuffle(eval_pool_ids)
-
-    train_anchor_ids = train_anchor_ids[:cfg['train_a']]
-    eval_anchor_ids = eval_anchor_ids[:cfg['eval_a']]
-    train_pool_ids = train_pool_ids[:cfg['train_p']]
-    eval_pool_ids = eval_pool_ids[:cfg['eval_p']]
-    
+    # 1. Load Data (stocked splits = .pt + .json + meta.json triplets)
     print(f"\n🔤 Loading gradient tokenizer for text formatting: {args.gradient_model}")
     gradient_tokenizer = AutoTokenizer.from_pretrained(args.gradient_model)
     if getattr(gradient_tokenizer, "chat_template", None) in (None, ""):
@@ -501,21 +445,36 @@ if __name__ == "__main__":
     if getattr(gradient_tokenizer, "pad_token", None) is None:
         gradient_tokenizer.pad_token = gradient_tokenizer.eos_token
 
-    print("\n📥 Loading SQLite Data...")
-    train_anchors, grads_train_anchors = load_stocked_samples_by_ids(args.anchor_train_db, train_anchor_ids, args.gradient_seed)
-    eval_anchors, grads_eval_anchors = load_stocked_samples_by_ids(args.anchor_eval_db, eval_anchor_ids, args.gradient_seed)
-    train_pool, grads_train_pool = load_stocked_samples_by_ids(args.pool_train_db, train_pool_ids, args.gradient_seed)
-    eval_pool, grads_eval_pool = load_stocked_samples_by_ids(args.pool_eval_db, eval_pool_ids, args.gradient_seed)
+    print("\n📥 Loading stocked splits...")
+    train_anchors, grads_train_anchors, meta_ta = load_stocked_split(args.anchor_train_prefix)
+    eval_anchors,  grads_eval_anchors,  meta_ea = load_stocked_split(args.anchor_eval_prefix)
+    train_pool,    grads_train_pool,    meta_tp = load_stocked_split(args.pool_train_prefix)
+    eval_pool,     grads_eval_pool,     meta_ep = load_stocked_split(args.pool_eval_prefix)
+
+    print(f"   📊 Loaded sizes — Train Anchors: {len(train_anchors)}, Eval Anchors: {len(eval_anchors)}, "
+          f"Train Pool: {len(train_pool)}, Eval Pool: {len(eval_pool)}")
+    print(f"   📊 Formatter — anchors: {meta_ta.get('formatter')}, pool: {meta_tp.get('formatter')}")
+    print(f"   📊 CountSketch proj_dim = {meta_ta.get('proj_dim')}")
+
+    # Sub-sample to the configured mode sizes
+    def _take(items, grads, n):
+        n = min(n, len(items))
+        return items[:n], grads[:n]
+
+    train_anchors, grads_train_anchors = _take(train_anchors, grads_train_anchors, cfg['train_a'])
+    eval_anchors,  grads_eval_anchors  = _take(eval_anchors,  grads_eval_anchors,  cfg['eval_a'])
+    train_pool,    grads_train_pool    = _take(train_pool,    grads_train_pool,    cfg['train_p'])
+    eval_pool,     grads_eval_pool     = _take(eval_pool,     grads_eval_pool,     cfg['eval_p'])
 
     check_gradient_diagnostics("Train Anchors", grads_train_anchors)
     check_gradient_diagnostics("Eval Anchors",  grads_eval_anchors)
     check_gradient_diagnostics("Train Pool",    grads_train_pool)
     check_gradient_diagnostics("Eval Pool",     grads_eval_pool)
 
-    train_anchors_text = anchor_samples_to_texts(train_anchors)
-    eval_anchors_text  = anchor_samples_to_texts(eval_anchors)
-    train_text         = pool_samples_to_texts(train_pool, gradient_tokenizer)
-    eval_text          = pool_samples_to_texts(eval_pool,  gradient_tokenizer)
+    train_anchors_text = anchor_dicts_to_texts(train_anchors)
+    eval_anchors_text  = anchor_dicts_to_texts(eval_anchors)
+    train_text         = pool_dicts_to_texts(train_pool, gradient_tokenizer)
+    eval_text          = pool_dicts_to_texts(eval_pool,  gradient_tokenizer)
     
     # Pre-calculate Ground Truth Scores (single CountSketch seed for both train and eval)
     true_scores_train = torch.mm(
@@ -618,8 +577,7 @@ if __name__ == "__main__":
     enc_pred  = enc_a  @ enc_e.T
     base_pred = base_a @ base_e.T
 
-    # Offload encoders to CPU before loading the gradient model — avoids
-    # having three large models on GPU simultaneously during GT computation.
+    # Offload encoders before loading gradient model for GT computation
     enc.to("cpu")
     base_enc.to("cpu")
     gc.collect()
@@ -634,9 +592,10 @@ if __name__ == "__main__":
     print(f"   📊 Training FLOPs: {training_flops:.3e}  ({flops_path})")
     print(f"   CountSketch dim={sketch_dim} | eval anchors={len(eval_anchors_text)} pool={len(eval_text)}")
 
-    # --- Diagnostic: compute LESS-style GT scores on the same eval samples ---
-    # Tells us whether the gap vs the final pipeline GT is from CountSketch lossiness
-    # (sketch << GT) or from something else like format/data-split (sketch ≈ GT).
+    # --- Diagnostic: compute LESS-style GT scores on the same eval samples.
+    # Input dicts (eval_anchors, eval_pool) were stored at stocking time with the
+    # exact shape that construct_test_sample / encode_with_messages_format expect,
+    # so we pass them directly — guaranteed identical tokenization vs the stocking.
     print("\n🔬 Computing LESS-style GT scores for eval samples (same points, high proj_dim)...")
     from datasets import Dataset as HFDataset
     from common.data import construct_test_sample, encode_with_messages_format
@@ -644,26 +603,14 @@ if __name__ == "__main__":
     from representation.less.compute_less_embeds import collect_grads, normalize_embeddings_in_chunks
     from representation.helper import batch_cosine_similarity
 
-    # BBH anchors: use construct_test_sample (matches compute_gradient_scores.py / run_all.sh)
-    anchor_hf = HFDataset.from_list([{"prompts": p, "labels": r} for p, r in eval_anchors])
+    anchor_hf = HFDataset.from_list(eval_anchors)
     anchor_hf = anchor_hf.map(
         lambda x: construct_test_sample(tokenizer=gradient_tokenizer, sample=x, max_length=2048),
         num_proc=1, load_from_cache_file=False,
     )
     anchor_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
-    # Tulu pool: decode JSON messages stored by render_for_storage and pass directly
-    # to encode_with_messages_format — exactly as compute_gradient_scores.py does.
-    def _pool_entry(p, r):
-        try:
-            msgs = json.loads(p)
-            if isinstance(msgs, list):
-                return {"messages": msgs}
-        except (json.JSONDecodeError, ValueError):
-            pass
-        return {"messages": [{"role": "user", "content": p}, {"role": "assistant", "content": r}]}
-
-    pool_hf = HFDataset.from_list([_pool_entry(p, r) for p, r in eval_pool])
+    pool_hf = HFDataset.from_list(eval_pool)
     pool_hf = pool_hf.map(
         lambda x: encode_with_messages_format(x, gradient_tokenizer, max_seq_length=2048, include_response=True),
         num_proc=1, load_from_cache_file=False,

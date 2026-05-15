@@ -104,21 +104,12 @@ def format_sample(item, _dataset_name, tokenizer, max_seq_len=2048):
     }
 
 def render_for_storage(item, *args, **kwargs):
-    """Return (prompt_text, response_text) for storage in the documents table.
-
-    For multi-turn items (Tulu pool) where prompt is a list of messages, the
-    full messages list (including the assistant turn) is JSON-encoded and stored
-    in the prompt column with an empty response.  This lets loading code pass
-    the exact same structure to encode_with_messages_format that
-    compute_gradient_scores.py uses, so CountSketch labels and GT labels are
-    computed from identical inputs.
-    """
-    import json
+    """Return (prompt_text, response_text) for storage in the documents table."""
     prompt = item.get("prompt", "")
     response = item.get("response", "")
     if isinstance(prompt, list):
-        full_messages = prompt + [{"role": "assistant", "content": response}]
-        return json.dumps(full_messages, ensure_ascii=False), ""
+        # Flatten message list back to a single string
+        prompt = " ".join(m.get("content", "") for m in prompt if m.get("role") != "assistant")
     return str(prompt), str(response)
 
 # =========================================================================
@@ -155,19 +146,10 @@ def format_item(item):
 def build_example(sample, tokenizer, dataset_name=None):
     """Chat-template formatted; dispatched per dataset.
 
-    For BBH anchors: uses construct_test_sample (eval/query format) to match
-    compute_gradient_scores.py so CountSketch labels and GT labels are
-    projections of the same gradient quantity.
-    For all other datasets: encode_with_messages_format (training format).
+    For FLAN/dolci/platinum: 2-turn instruction. For MMLU: lm-eval-style MC
+    body in user turn + answer letter in assistant turn. Same format used
+    everywhere this dataset appears in the pipeline.
     """
-    if dataset_name == "bbh":
-        from common.data import construct_test_sample
-        result = construct_test_sample(
-            tokenizer=tokenizer,
-            sample={"prompts": sample["prompt"], "labels": sample["response"]},
-            max_length=MAX_SEQ_LEN,
-        )
-        return result["input_ids"], result["labels"]
     out = format_sample(sample, dataset_name or "instruction", tokenizer, MAX_SEQ_LEN)
     return out["input_ids"], out["labels"]
 
@@ -671,8 +653,8 @@ class GradientExtractor:
 
             input_ids, labels = build_example(sample, self.tokenizer, self.dataset_name)
 
-            input_ids = torch.as_tensor(input_ids).unsqueeze(0).to(device)
-            labels = torch.as_tensor(labels).unsqueeze(0).to(device)
+            input_ids = torch.tensor(input_ids).unsqueeze(0).to(device)
+            labels = torch.tensor(labels).unsqueeze(0).to(device)
 
             if (labels == -100).all():
                 self.buffer[i].zero_()
