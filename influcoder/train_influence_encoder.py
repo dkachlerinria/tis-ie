@@ -423,7 +423,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--run_mode', type=str, default="quick", choices=['tiny', 'quick', 'small', 'medium', 'full'])
     parser.add_argument('--encoder_model', type=str, default="jhu-clsp/ettin-encoder-150m")
-    parser.add_argument('--gradient_model', type=str, default="Qwen/Qwen3-0.6B-Base",
+    parser.add_argument('--gradient_model', type=str, default="Qwen/Qwen3-0.6B",
                         help="Model whose chat template is used to format text (must match gradient_stocking).")
     parser.add_argument('--anchor_train_db', type=str, required=True)
     parser.add_argument('--anchor_eval_db', type=str, required=True)

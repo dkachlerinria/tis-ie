@@ -9,7 +9,7 @@ export END_INDEX=100
 
 # Smaller ground-truth projection (still high relative to LESS@8192).
 # Use validate_projection.sh once to confirm this is fine.
-export GT_PROJ_DIM=262144
+export GT_PROJ_DIM=131072
 
 # Project after every sample to minimize gradient accumulation in memory
 export PROJECT_INTERVAL=1
