@@ -1,12 +1,14 @@
 import argparse
 import logging
 import os
+import time
 import torch
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from influence_eval.bbh_data import load_bbh_samples
+from influence_eval.flops_measure import flop_counter
 from influence_eval.model_utils import count_params
 from iprox.utils.init_with_ipsvd import init_proxy_model_with_IPSVD, load_proxy_model
 from common.data import encode_with_messages_format, construct_test_sample
@@ -90,26 +92,6 @@ def compute_iprox_scores(
     logger.info("📥 Loading dev samples...")
     anchor_samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
 
-    dev_grads = []
-    grad_dim = None
-    for sample in tqdm(anchor_samples, desc="Dev Gradients"):
-        prompt, response = sample["prompt"], sample["response"]
-        messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
-        batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=2048, include_response=True)
-        for k in batch:
-            if torch.is_tensor(batch[k]):
-                batch[k] = batch[k].unsqueeze(0)
-
-        g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
-        if g is not None:
-            if grad_dim is None:
-                grad_dim = int(g.shape[0])
-            dev_grads.append(safe_normalize(g))
-        else:
-            dev_grads.append(torch.zeros(1))
-
-    dev_matrix = torch.stack(dev_grads) # [n_dev, dim]
-
     # Load Train Data
     from datasets import load_dataset
     if os.path.exists(train_dataset_name):
@@ -122,19 +104,46 @@ def compute_iprox_scores(
     logger.info("📊 Computing similarity matrix for %d training samples...", len(ds))
     scores = torch.zeros((num_anchors, len(ds)), dtype=torch.float32)
 
-    for j in tqdm(range(len(ds)), desc="Train Similarity"):
-        batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=2048, include_response=True)
-        for k in batch:
-            if torch.is_tensor(batch[k]):
-                batch[k] = batch[k].unsqueeze(0)
+    t0 = time.perf_counter()
+    with flop_counter() as counter:
+        dev_grads = []
+        grad_dim = None
+        for sample in tqdm(anchor_samples, desc="Dev Gradients"):
+            prompt, response = sample["prompt"], sample["response"]
+            messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
+            batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=2048, include_response=True)
+            for k in batch:
+                if torch.is_tensor(batch[k]):
+                    batch[k] = batch[k].unsqueeze(0)
 
-        g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
-        if g_t is not None:
-            g_t_norm = safe_normalize(g_t)
-            scores[:, j] = dev_matrix @ g_t_norm
+            g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+            if g is not None:
+                if grad_dim is None:
+                    grad_dim = int(g.shape[0])
+                dev_grads.append(safe_normalize(g))
+            else:
+                dev_grads.append(torch.zeros(1))
 
-        if j % 1000 == 0:
-            torch.cuda.empty_cache()
+        dev_matrix = torch.stack(dev_grads) # [n_dev, dim]
+
+        for j in tqdm(range(len(ds)), desc="Train Similarity"):
+            batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=2048, include_response=True)
+            for k in batch:
+                if torch.is_tensor(batch[k]):
+                    batch[k] = batch[k].unsqueeze(0)
+
+            g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+            if g_t is not None:
+                g_t_norm = safe_normalize(g_t)
+                scores[:, j] = dev_matrix @ g_t_norm
+
+            if j % 1000 == 0:
+                torch.cuda.empty_cache()
+
+    inference_time_s = time.perf_counter() - t0
+    measured_flops = int(counter.get_total_flops())
+    n_samples = len(anchor_samples) + len(ds)
+    time_per_sample_s = inference_time_s / max(n_samples, 1)
 
     # Save
     out_path = os.path.join(save_dir, f"{out_name}_scores.pt")
@@ -149,7 +158,9 @@ def compute_iprox_scores(
         "model_name": proxy_path,
         "sparsity": sparsity,
         "method": "iprox",
-        "measured_flops": None,
+        "measured_flops": measured_flops,
+        "inference_time_s": float(inference_time_s),
+        "time_per_sample_s": float(time_per_sample_s),
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
 
