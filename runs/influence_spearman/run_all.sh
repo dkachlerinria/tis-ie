@@ -30,8 +30,8 @@ bash runs/influence_spearman/compute_ground_truth.sh "$CFG"           || echo "G
 #bash runs/influence_spearman/compute_less_small_scores.sh "$CFG"     || echo "LESS-small failed, skipping"
 bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"      || echo "Embedding failed, skipping"
 #bash runs/influence_spearman/compute_random_scores.sh "$CFG"         || echo "Random failed, skipping"
-#bash runs/influence_spearman/compute_logra_scores.sh "$CFG"          || echo "LoGRA failed, skipping"
-#bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"    || echo "LoGRA-small failed, skipping"
+bash runs/influence_spearman/compute_logra_scores.sh "$CFG"          || echo "LoGRA failed, skipping"
+bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"    || echo "LoGRA-small failed, skipping"
 # Force a fresh evaluation summary
 rm -f "${INFLUENCE_OUT}/results.json"
 
