@@ -18,14 +18,14 @@ rm -f "${IPROX_PROXY_DIR}/init_pytorch_model.bin" "${IPROX_PROXY_DIR}/final_pyto
 python iprox/train_iprox.py \
     --target_model      "${INFLUENCE_MODEL}" \
     --train_dataset     "${TRAIN_DATASET}" \
-    --n_train_p         8000 \
+    --n_train_p         10 \
     --pool_start_index  "${END_INDEX}" \
     --sparsity          0.9 \
     --batch_size        2 \
     --gradient_accumulation_steps 1 \
     --lambda_anchor     0.0 \
-    --epochs            1 \
-    --max_seq_length    2048 \
+    --epochs            10 \
+    --max_seq_length    1024 \
     --output_dir        "${IPROX_PROXY_DIR}" \
     --lr                1e-4 \
     --seed              137
