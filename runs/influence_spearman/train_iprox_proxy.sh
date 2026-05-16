@@ -12,8 +12,10 @@ mkdir -p "${IPROX_PROXY_DIR}"
 
 echo "🚀 Training IProX Proxy (Mode: ${INFLUCODER_RUN_MODE})..."
 
-# Force a 100% fresh start by deleting both the cached SVD factorization and the final checkpoint
-rm -f "${IPROX_PROXY_DIR}/init_pytorch_model.bin" "${IPROX_PROXY_DIR}/final_pytorch_model.bin"
+# Force a 100% fresh start: remove all proxy artifacts from previous runs
+rm -f  "${IPROX_PROXY_DIR}/init_pytorch_model.bin"
+rm -f  "${IPROX_PROXY_DIR}/final_pytorch_model.bin"
+rm -rf "${IPROX_PROXY_DIR}/model"
 
 python iprox/train_iprox.py \
     --target_model      "${INFLUENCE_MODEL}" \
