@@ -45,6 +45,7 @@ def safe_normalize(grad, eps=1e-8):
 
 def compute_iprox_scores(
     proxy_path: str,
+    target_model: str,
     save_dir: str,
     end_index: int,
     num_anchors: int,
@@ -60,14 +61,21 @@ def compute_iprox_scores(
     if target_modules is None:
         target_modules = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
 
-    logger.info("🤖 Loading Proxy Model: %s", proxy_path)
+    # Tokenizer comes from the saved proxy dir (matches what training used).
+    logger.info("🔤 Loading tokenizer from proxy dir: %s", proxy_path)
     tokenizer = AutoTokenizer.from_pretrained(proxy_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Base model MUST come from the original target model, not from proxy_path —
+    # the proxy checkpoint only contains LinearSVD factors (linear_A/linear_B),
+    # so loading from proxy_path would silently random-init all non-SVD weights
+    # (embeddings, layernorms, untouched linears). This is the IProX original
+    # design: proxy = base model (deepcopy) + LinearSVD factors patched in.
+    logger.info("🤖 Loading base model: %s", target_model)
     base_model = AutoModelForCausalLM.from_pretrained(
-        proxy_path,
-        dtype=torch.bfloat16,
+        target_model,
+        torch_dtype=torch.bfloat16,
         device_map="auto",
         attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
     )
@@ -82,6 +90,7 @@ def compute_iprox_scores(
     )
 
     final_bin = os.path.join(proxy_path, "pytorch_model.bin")
+    logger.info("📥 Loading trained LinearSVD factors from: %s", final_bin)
     load_proxy_model(proxy_model, final_bin)
     # count_params before requires_grad_ so "trainable" reflects SVD-factor params only
     proxy_params = count_params(proxy_model)
@@ -156,7 +165,8 @@ def compute_iprox_scores(
         "num_anchors": int(scores.shape[0]),
         "num_train": int(scores.shape[1]),
         "grad_dim": grad_dim,
-        "model_name": proxy_path,
+        "model_name": target_model,
+        "proxy_path": proxy_path,
         "sparsity": sparsity,
         "method": "iprox",
         "measured_flops": measured_flops,
@@ -168,7 +178,11 @@ def compute_iprox_scores(
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     p = argparse.ArgumentParser()
-    p.add_argument("--proxy_path", required=True)
+    p.add_argument("--proxy_path", required=True,
+                   help="Directory with the saved LinearSVD factors (pytorch_model.bin) + tokenizer.")
+    p.add_argument("--target_model", required=True,
+                   help="Original base model (e.g. Qwen/Qwen3-0.6B). Required because the proxy "
+                        "checkpoint only stores SVD factors, not full base model weights.")
     p.add_argument("--save_dir", required=True)
     p.add_argument("--end_index", type=int, required=True)
     p.add_argument("--num_anchors", type=int, required=True)
@@ -180,6 +194,7 @@ def main():
 
     compute_iprox_scores(
         proxy_path=args.proxy_path,
+        target_model=args.target_model,
         save_dir=args.save_dir,
         end_index=args.end_index,
         num_anchors=args.num_anchors,
