@@ -28,7 +28,7 @@ export GT_PROJ_DIM=65536
 export LESS_PROJ_DIM=8192
 
 # Memory optimization for large projections (adjust to fit VRAM)
-export PROJECTOR_BATCH_SIZE=4
+export PROJECTOR_BATCH_SIZE=16
 export PROJECTOR_BLOCK_SIZE=128
 
 # Fresh-LoRA seed (must be identical across GT and LESS for apples-to-apples)
