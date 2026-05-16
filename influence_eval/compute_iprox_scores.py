@@ -102,12 +102,16 @@ def compute_iprox_scores(
     logger.info("📥 Loading dev samples...")
     anchor_samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
 
-    # Load Train Data
+    # Load Train Data — MUST match the canonical seed=42 shuffle used by every other
+    # scoring method (compute_gradient_scores.py, compute_sentence_embeds.py, LoGRA).
+    # Without this, iprox's score matrix indexes a completely different sample set
+    # than the GT matrix at every column → Spearman becomes random noise.
     from datasets import load_dataset
     if os.path.exists(train_dataset_name):
         ds = load_dataset("json", data_files=[train_dataset_name])["train"]
     else:
         ds = load_dataset(train_dataset_name, split="train")
+    ds = ds.shuffle(seed=42)
     ds = ds.select(range(min(end_index, len(ds))))
 
     # Compute Train Gradients and Similarity
