@@ -20,14 +20,14 @@ rm -rf "${IPROX_PROXY_DIR}/model"
 python iprox/train_iprox.py \
     --target_model      "${INFLUENCE_MODEL}" \
     --train_dataset     "${TRAIN_DATASET}" \
-    --n_train_p         150 \
+    --n_train_p         1500 \
     --pool_start_index  "${END_INDEX}" \
     --sparsity          "${IPROX_SPARSITY}" \
     --batch_size        1 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 8 \
     --lambda_anchor     0.0 \
     --epochs            10 \
-    --max_seq_length    2048 \
+    --max_seq_length    1024 \
     --output_dir        "${IPROX_PROXY_DIR}" \
     --lr                1e-4 \
     --seed              137
