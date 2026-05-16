@@ -14,7 +14,7 @@ python3 -m influence_eval.validate_projection \
     --end_index 50 \
     --num_anchors 10 \
     --dev_dataset_name "${BENCHMARK}" \
-    --proj_dims 8192 16384 32768 65536 131072 262144 \
+    --proj_dims 8192 16384 32768 65536 \
     --lora_target_modules "${LORA_TARGET_MODULES}" \
     --lora_rank "${LORA_RANK}" \
     --lora_alpha "${LORA_ALPHA}" \
