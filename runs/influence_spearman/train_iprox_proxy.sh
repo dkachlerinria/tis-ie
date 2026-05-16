@@ -29,5 +29,5 @@ python iprox/train_iprox.py \
     --epochs            4 \
     --max_seq_length    2048 \
     --output_dir        "${IPROX_PROXY_DIR}" \
-    --lr                1e-4 \
+    --lr                1e-3 \
     --seed              137
