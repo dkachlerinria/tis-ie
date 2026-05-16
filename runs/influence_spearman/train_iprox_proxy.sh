@@ -20,10 +20,10 @@ python iprox/train_iprox.py \
     --train_dataset     "${TRAIN_DATASET}" \
     --n_train_p         150 \
     --pool_start_index  "${END_INDEX}" \
-    --sparsity          0.7 \
-    --batch_size        4 \
+    --sparsity          0.8 \
+    --batch_size        2 \
     --gradient_accumulation_steps 4 \
-    --lambda_anchor     0.1 \
+    --lambda_anchor     0.01 \
     --epochs            10 \
     --max_seq_length    2048 \
     --output_dir        "${IPROX_PROXY_DIR}" \
