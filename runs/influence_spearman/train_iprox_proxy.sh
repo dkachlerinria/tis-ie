@@ -20,12 +20,12 @@ python iprox/train_iprox.py \
     --train_dataset     "${TRAIN_DATASET}" \
     --n_train_p         150 \
     --pool_start_index  "${END_INDEX}" \
-    --sparsity          0.7 \
+    --sparsity          0.9 \
     --batch_size        1 \
     --gradient_accumulation_steps 4 \
     --lambda_anchor     0.0 \
     --epochs            10 \
-    --max_seq_length    1024 \
+    --max_seq_length    2048 \
     --output_dir        "${IPROX_PROXY_DIR}" \
     --lr                1e-4 \
     --seed              137
