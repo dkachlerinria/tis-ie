@@ -419,8 +419,6 @@ if __name__ == "__main__":
     parser.add_argument('--gt_proj_dim', type=int, default=65536,
                         help='Projection dim for end-of-training GT scores (typically GT_PROJ_DIM from config).')
     parser.add_argument('--project_interval', type=int, default=1)
-    parser.add_argument('--projector_batch_size', type=int, default=16)
-    parser.add_argument('--projector_block_size', type=int, default=128)
 
 
     args = parser.parse_args()
@@ -644,15 +642,11 @@ if __name__ == "__main__":
     print(f"   Anchor gradients ({len(eval_anchors)} samples, proj_dim={args.gt_proj_dim})...")
     a_grads = collect_grads(anchor_dl, grad_model, proj_dim=args.gt_proj_dim,
                             adam_optimizer_state=None, gradient_type="sgd",
-                            project_interval=args.project_interval,
-                            projector_batch_size=args.projector_batch_size,
-                            projector_block_size=args.projector_block_size)
+                            project_interval=args.project_interval)
     print(f"   Pool gradients ({len(eval_pool)} samples, proj_dim={args.gt_proj_dim})...")
     p_grads = collect_grads(pool_dl, grad_model, proj_dim=args.gt_proj_dim,
                             adam_optimizer_state=None, gradient_type="sgd",
-                            project_interval=args.project_interval,
-                            projector_batch_size=args.projector_batch_size,
-                            projector_block_size=args.projector_block_size)
+                            project_interval=args.project_interval)
 
     a_grads = normalize_embeddings_in_chunks(a_grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False)
     p_grads = normalize_embeddings_in_chunks(p_grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False)

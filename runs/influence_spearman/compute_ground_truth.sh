@@ -19,7 +19,4 @@ python3 -m influence_eval.compute_gradient_scores \
     --lora_alpha "${LORA_ALPHA}" \
     --lora_dropout "${LORA_DROPOUT}" \
     --lora_seed "${LORA_SEED}" \
-    --project_interval "${PROJECT_INTERVAL}" \
-    --projector_batch_size "${PROJECTOR_BATCH_SIZE:-1}" \
-    --projector_block_size "${PROJECTOR_BLOCK_SIZE:-128}"
-
+    --project_interval "${PROJECT_INTERVAL}"

@@ -94,8 +94,6 @@ def _collect_and_normalize(
     model,
     proj_dim: int,
     project_interval: int,
-    projector_batch_size: int,
-    projector_block_size: int,
 ) -> torch.Tensor:
     grads = collect_grads(
         dataloader=dataloader,
@@ -104,8 +102,6 @@ def _collect_and_normalize(
         adam_optimizer_state=None,
         gradient_type="sgd",
         project_interval=project_interval,
-        projector_batch_size=projector_batch_size,
-        projector_block_size=projector_block_size,
     )
     return normalize_embeddings_in_chunks(
         grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False
@@ -122,8 +118,6 @@ def compute_scores(
     proj_dim: int,
     dev_dataset_name: str,
     project_interval: int,
-    projector_batch_size: int,
-    projector_block_size: int,
     save_grads: bool,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
@@ -140,8 +134,8 @@ def compute_scores(
     import time
     t0 = time.perf_counter()
     with flop_counter() as counter:
-        train_grads = _collect_and_normalize(train_dl, model, proj_dim, project_interval, projector_batch_size, projector_block_size)
-        anchor_grads = _collect_and_normalize(anchor_dl, model, proj_dim, project_interval, projector_batch_size, projector_block_size)
+        train_grads = _collect_and_normalize(train_dl, model, proj_dim, project_interval)
+        anchor_grads = _collect_and_normalize(anchor_dl, model, proj_dim, project_interval)
         scores = batch_cosine_similarity(
             dev_reps=anchor_grads,
             train_reps=train_grads,
@@ -194,8 +188,6 @@ def parse_args():
     p.add_argument("--lora_dropout", type=float, default=0.1)
     p.add_argument("--lora_seed", type=int, default=0)
     p.add_argument("--project_interval", type=int, default=8)
-    p.add_argument("--projector_batch_size", type=int, default=16)
-    p.add_argument("--projector_block_size", type=int, default=128)
     p.add_argument("--save_grads", action="store_true")
     return p.parse_args()
 
@@ -231,8 +223,6 @@ def main():
         proj_dim=args.proj_dim,
         dev_dataset_name=args.dev_dataset_name,
         project_interval=args.project_interval,
-        projector_batch_size=args.projector_batch_size,
-        projector_block_size=args.projector_block_size,
         save_grads=args.save_grads,
     )
 

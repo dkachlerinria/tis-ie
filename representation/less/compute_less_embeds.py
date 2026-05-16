@@ -147,8 +147,6 @@ def collect_grads(
     adam_optimizer_state: Optional[dict] = None,
     gradient_type: str = "adam",
     project_interval: int = 8,
-    projector_batch_size: int = 16,
-    projector_block_size: int = 128,
 ):
     """
     Collects gradients from the model during evaluation and saves them to disk.
@@ -162,8 +160,8 @@ def collect_grads(
         project_interval (int): The interval for projection. For example, if project_interval=8, the gradients will be projected every 8 batches.
     """
     model_id = 0  # model_id is used to draft the random seed for the projectors
-    block_size = projector_block_size  # fixed block size for the projectors
-    projector_batch_size = projector_batch_size  # batch size for the projectors
+    block_size = 128  # fixed block size for the projectors
+    projector_batch_size = 16  # batch size for the projectors
     torch.random.manual_seed(0)  # set the random seed for torch
 
     device = next(model.parameters()).device
