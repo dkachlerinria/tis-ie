@@ -13,7 +13,7 @@ source "$CFG"
 ABLATION_DIR="${INFLUCODER_ENCODER_DIR}_ablation_alpha"
 mkdir -p "$ABLATION_DIR"
 
-ALPHAS=(0.0 0.5 1.0)
+ALPHAS=(0.0 0.25 0.5 0.75 1.0)
 
 for ALPHA in "${ALPHAS[@]}"; do
     OUT_DIR="${ABLATION_DIR}/alpha_${ALPHA}"
