@@ -56,6 +56,10 @@ def load_base_with_fresh_lora(
         task_type="CAUSAL_LM",
         bias="none",
     )
+    
+    # CRITICAL: Without this, HuggingFace silently ignores gradient checkpointing!
+    base_model.enable_input_require_grads()
+    
     model = get_peft_model(base_model, peft_config)
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
