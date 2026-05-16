@@ -213,6 +213,9 @@ def main():
         seed=args.lora_seed,
     )
 
+    model.config.use_cache = False
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    
     out_path, meta = compute_scores(
         model=model,
         tokenizer=tokenizer,
