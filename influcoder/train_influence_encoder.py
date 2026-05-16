@@ -634,8 +634,6 @@ if __name__ == "__main__":
         lora_dropout=args.lora_dropout,
         seed=args.lora_seed,
     )
-    grad_model.config.use_cache = False
-    grad_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     grad_model.eval()
 
     anchor_dl = torch.utils.data.DataLoader(anchor_hf, batch_size=1, shuffle=False)

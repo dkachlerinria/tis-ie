@@ -110,11 +110,10 @@ def train_with_gradient_alignment(
     # KD loss
     kl_loss_fn = nn.KLDivLoss(reduction='none', log_target=True)
 
-    try:
-        proxy_model.set_attn_implementation("eager")
-    except Exception:
-        if hasattr(proxy_model, "config"):
-            proxy_model.config.attn_implementation = "eager"
+    # _sdpa_math_ctx() (used in the proxy forward below) forces MATH backend for
+    # SDPA, which is compatible with create_graph=True. Setting eager globally would
+    # bypass SDPA entirely, preventing _sdpa_math_ctx() from having any effect and
+    # materialising large O(seq^2) attention matrices that OOM with create_graph=True.
 
     steps_per_epoch = max(1, len(train_dataloader) // max(1, gradient_accumulation_steps))
     total_steps = steps_per_epoch * epochs

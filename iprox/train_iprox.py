@@ -166,10 +166,6 @@ def main():
     # 3. Initialize Proxy Model
     os.makedirs(args.output_dir, exist_ok=True)
 
-    if os.path.exists(os.path.join(args.output_dir, "final_pytorch_model.bin")):
-        logger.info("Final checkpoint already exists. Exiting.")
-        sys.exit(0)
-
     # Diagnostic: Check module names
     linear_modules = [n for n, m in target_model.named_modules() if isinstance(m, torch.nn.Linear)]
     logger.info(f"🔍 Found {len(linear_modules)} linear modules in target model.")
