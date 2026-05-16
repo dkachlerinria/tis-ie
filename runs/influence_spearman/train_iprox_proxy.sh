@@ -31,3 +31,5 @@ python iprox/train_iprox.py \
     --output_dir        "${IPROX_PROXY_DIR}" \
     --lr                1e-4 \
     --seed              137
+
+# Test
