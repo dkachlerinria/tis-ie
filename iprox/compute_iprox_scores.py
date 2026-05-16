@@ -170,9 +170,10 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
     
     base_model = AutoModelForCausalLM.from_pretrained(
-        args.proxy_path, 
-        torch_dtype=torch.bfloat16, 
-        device_map="auto"
+        args.proxy_path,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
     )
 
     # Expand "all-linear" if specified

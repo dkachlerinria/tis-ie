@@ -69,6 +69,7 @@ def compute_iprox_scores(
         proxy_path,
         dtype=torch.bfloat16,
         device_map="auto",
+        attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
     )
 
     proxy_model = init_proxy_model_with_IPSVD(

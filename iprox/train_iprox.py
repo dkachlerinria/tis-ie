@@ -129,6 +129,7 @@ def main():
         args.target_model,
         torch_dtype=torch.bfloat16,
         device_map="auto",
+        attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
     )
     embedding_size = target_model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
