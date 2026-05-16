@@ -7,11 +7,11 @@ import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from influence_eval.bbh_data import load_bbh_samples
 from influence_eval.flops_measure import flop_counter
 from influence_eval.model_utils import count_params
+from influence_eval.compute_gradient_scores import load_anchor_dataset
 from iprox.utils.init_with_ipsvd import init_proxy_model_with_IPSVD, load_proxy_model
-from common.data import encode_with_messages_format, construct_test_sample
+from common.data import encode_with_messages_format
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +98,13 @@ def compute_iprox_scores(
     for p in proxy_model.parameters():
         p.requires_grad_(True)
 
-    # Load Dev Data (Spearman Standard) — same seed=42 shuffle as all other methods.
+    # Load Dev (anchor) Data — use the SAME tokenization path GT/LESS/LoGRA use
+    # (construct_test_sample on {"prompts","labels"} dicts). Iprox previously
+    # wrapped anchors in <|user|>/<|assistant|> chat tags via encode_with_messages_format,
+    # which gave proxy gradients on a different representation of each anchor than
+    # GT was scoring against — making per-anchor Spearman incomparable.
     logger.info("📥 Loading dev samples...")
-    anchor_samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
+    anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
 
     # Load Train Data — MUST match the canonical seed=42 shuffle used by every other
     # scoring method (compute_gradient_scores.py, compute_sentence_embeds.py, LoGRA).
@@ -122,13 +126,9 @@ def compute_iprox_scores(
     with flop_counter() as counter:
         dev_grads = []
         grad_dim = None
-        for sample in tqdm(anchor_samples, desc="Dev Gradients"):
-            prompt, response = sample["prompt"], sample["response"]
-            messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
-            batch = encode_with_messages_format({"messages": messages}, tokenizer, max_seq_length=2048, include_response=True)
-            for k in batch:
-                if torch.is_tensor(batch[k]):
-                    batch[k] = batch[k].unsqueeze(0)
+        for i in tqdm(range(len(anchor_ds)), desc="Dev Gradients"):
+            batch = anchor_ds[i]
+            batch = {k: v.unsqueeze(0) for k, v in batch.items() if torch.is_tensor(v)}
 
             g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
             if g is not None:
@@ -156,7 +156,7 @@ def compute_iprox_scores(
 
     inference_time_s = time.perf_counter() - t0
     measured_flops = int(counter.get_total_flops())
-    n_samples = len(anchor_samples) + len(ds)
+    n_samples = len(anchor_ds) + len(ds)
     time_per_sample_s = inference_time_s / max(n_samples, 1)
 
     # Save
