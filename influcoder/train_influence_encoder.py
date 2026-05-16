@@ -419,6 +419,9 @@ if __name__ == "__main__":
     parser.add_argument('--gt_proj_dim', type=int, default=65536,
                         help='Projection dim for end-of-training GT scores (typically GT_PROJ_DIM from config).')
     parser.add_argument('--project_interval', type=int, default=1)
+    parser.add_argument('--eval_gt', action='store_true',
+                        help='Run the expensive LESS-style ground-truth gradient evaluation at the end.'
+                             ' Off by default; enable when you need the GT columns.')
 
 
     args = parser.parse_args()
