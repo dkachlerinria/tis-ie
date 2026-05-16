@@ -33,7 +33,7 @@ bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"      || echo "Em
 bash runs/influence_spearman/compute_logra_scores.sh "$CFG"          || echo "LoGRA failed, skipping"
 #bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"    || echo "LoGRA-small failed, skipping"
 #bash runs/influence_spearman/compute_less_proxy_scores.sh "$CFG"     || echo "LESS-proxy failed, skipping"
-#bash runs/influence_spearman/compute_logra_proxy_scores.sh "$CFG"    || echo "LoGRA-proxy failed, skipping"
+bash runs/influence_spearman/compute_logra_proxy_scores.sh "$CFG"    || echo "LoGRA-proxy failed, skipping"
 # Force a fresh evaluation summary
 rm -f "${INFLUENCE_OUT}/results.json"
 
