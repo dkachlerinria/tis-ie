@@ -603,87 +603,100 @@ if __name__ == "__main__":
     print(f"   ⏱  Training time:  {training_time_s:.1f}s  ({timing_path})")
     print(f"   CountSketch dim={sketch_dim} | eval anchors={len(eval_anchors_text)} pool={len(eval_text)}")
 
-    # --- Diagnostic: compute LESS-style GT scores on the same eval samples.
-    # Input dicts (eval_anchors, eval_pool) were stored at stocking time with the
-    # exact shape that construct_test_sample / encode_with_messages_format expect,
-    # so we pass them directly — guaranteed identical tokenization vs the stocking.
-    print("\n🔬 Computing LESS-style GT scores for eval samples (same points, high proj_dim)...")
-    from datasets import Dataset as HFDataset
-    from common.data import construct_test_sample, encode_with_messages_format
-    from influence_eval.model_utils import load_base_with_fresh_lora
-    from representation.less.compute_less_embeds import collect_grads, normalize_embeddings_in_chunks
-    from representation.helper import batch_cosine_similarity
+    enc_gt = base_gt = None
+    if args.eval_gt:
+        # Expensive: loads the full gradient model and computes LESS-style high-dim
+        # gradient similarities.  Skip unless --eval_gt is passed.
+        print("\n🔬 Computing LESS-style GT scores for eval samples (same points, high proj_dim)...")
+        from datasets import Dataset as HFDataset
+        from common.data import construct_test_sample, encode_with_messages_format
+        from influence_eval.model_utils import load_base_with_fresh_lora
+        from representation.less.compute_less_embeds import collect_grads, normalize_embeddings_in_chunks
+        from representation.helper import batch_cosine_similarity
 
-    anchor_hf = HFDataset.from_list(eval_anchors)
-    anchor_hf = anchor_hf.map(
-        lambda x: construct_test_sample(tokenizer=gradient_tokenizer, sample=x, max_length=2048),
-        num_proc=1, load_from_cache_file=False,
-    )
-    anchor_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+        anchor_hf = HFDataset.from_list(eval_anchors)
+        anchor_hf = anchor_hf.map(
+            lambda x: construct_test_sample(tokenizer=gradient_tokenizer, sample=x, max_length=2048),
+            num_proc=1, load_from_cache_file=False,
+        )
+        anchor_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
-    pool_hf = HFDataset.from_list(eval_pool)
-    pool_hf = pool_hf.map(
-        lambda x: encode_with_messages_format(x, gradient_tokenizer, max_seq_length=2048, include_response=True),
-        num_proc=1, load_from_cache_file=False,
-    )
-    pool_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+        pool_hf = HFDataset.from_list(eval_pool)
+        pool_hf = pool_hf.map(
+            lambda x: encode_with_messages_format(x, gradient_tokenizer, max_seq_length=2048, include_response=True),
+            num_proc=1, load_from_cache_file=False,
+        )
+        pool_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
-    grad_model = load_base_with_fresh_lora(
-        model_name=args.gradient_model,
-        tokenizer=gradient_tokenizer,
-        lora_target_modules=args.lora_target_modules,
-        lora_rank=args.lora_rank,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        seed=args.lora_seed,
-    )
-    grad_model.eval()
+        grad_model = load_base_with_fresh_lora(
+            model_name=args.gradient_model,
+            tokenizer=gradient_tokenizer,
+            lora_target_modules=args.lora_target_modules,
+            lora_rank=args.lora_rank,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            seed=args.lora_seed,
+        )
+        grad_model.eval()
 
-    anchor_dl = torch.utils.data.DataLoader(anchor_hf, batch_size=1, shuffle=False)
-    pool_dl   = torch.utils.data.DataLoader(pool_hf,   batch_size=1, shuffle=False)
+        anchor_dl = torch.utils.data.DataLoader(anchor_hf, batch_size=1, shuffle=False)
+        pool_dl   = torch.utils.data.DataLoader(pool_hf,   batch_size=1, shuffle=False)
 
-    print(f"   Anchor gradients ({len(eval_anchors)} samples, proj_dim={args.gt_proj_dim})...")
-    a_grads = collect_grads(anchor_dl, grad_model, proj_dim=args.gt_proj_dim,
-                            adam_optimizer_state=None, gradient_type="sgd",
-                            project_interval=args.project_interval)
-    print(f"   Pool gradients ({len(eval_pool)} samples, proj_dim={args.gt_proj_dim})...")
-    p_grads = collect_grads(pool_dl, grad_model, proj_dim=args.gt_proj_dim,
-                            adam_optimizer_state=None, gradient_type="sgd",
-                            project_interval=args.project_interval)
+        print(f"   Anchor gradients ({len(eval_anchors)} samples, proj_dim={args.gt_proj_dim})...")
+        a_grads = collect_grads(anchor_dl, grad_model, proj_dim=args.gt_proj_dim,
+                                adam_optimizer_state=None, gradient_type="sgd",
+                                project_interval=args.project_interval)
+        print(f"   Pool gradients ({len(eval_pool)} samples, proj_dim={args.gt_proj_dim})...")
+        p_grads = collect_grads(pool_dl, grad_model, proj_dim=args.gt_proj_dim,
+                                adam_optimizer_state=None, gradient_type="sgd",
+                                project_interval=args.project_interval)
 
-    a_grads = normalize_embeddings_in_chunks(a_grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False)
-    p_grads = normalize_embeddings_in_chunks(p_grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False)
-    gt_scores_eval = batch_cosine_similarity(
-        dev_reps=a_grads, train_reps=p_grads, chunk_size=256, normalize=False,
-    ).float().cpu().numpy()
+        a_grads = normalize_embeddings_in_chunks(a_grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False)
+        p_grads = normalize_embeddings_in_chunks(p_grads, chunk_size=10000, dim=1, eps=1e-12, in_place=False)
+        gt_scores_eval = batch_cosine_similarity(
+            dev_reps=a_grads, train_reps=p_grads, chunk_size=256, normalize=False,
+        ).float().cpu().numpy()
 
-    del grad_model, a_grads, p_grads, anchor_hf, pool_hf
-    gc.collect()
-    torch.cuda.empty_cache()
+        del grad_model, a_grads, p_grads, anchor_hf, pool_hf
+        gc.collect()
+        torch.cuda.empty_cache()
 
-    enc_gt  = compute_native_metrics(gt_scores_eval, enc_pred,  agg_mode=args.agg_mode)
-    base_gt = compute_native_metrics(gt_scores_eval, base_pred, agg_mode=args.agg_mode)
+        enc_gt  = compute_native_metrics(gt_scores_eval, enc_pred,  agg_mode=args.agg_mode)
+        base_gt = compute_native_metrics(gt_scores_eval, base_pred, agg_mode=args.agg_mode)
+    else:
+        print("\n   (GT eval skipped — pass --eval_gt to enable)")
 
-    tbl = [
-        ["Semantic Baseline",
-         f"{base_sketch['agg_spearman']:.4f}", f"{base_sketch['per_anchor_spearman_mean']:.4f}",
-         f"{base_gt['agg_spearman']:.4f}",     f"{base_gt['per_anchor_spearman_mean']:.4f}"],
-        ["Influence-Encoder",
-         f"{enc_sketch['agg_spearman']:.4f}",  f"{enc_sketch['per_anchor_spearman_mean']:.4f}",
-         f"{enc_gt['agg_spearman']:.4f}",       f"{enc_gt['per_anchor_spearman_mean']:.4f}"],
-    ]
-    print(tabulate(tbl,
-                   headers=["Method", f"Agg ρ sketch(d={sketch_dim})", "PA ρ sketch",
-                            f"Agg ρ GT(d={args.gt_proj_dim})", "PA ρ GT"],
-                   tablefmt="github"))
-    print(f"   sketch ≈ GT → CountSketch fine; gap is format/data-split.")
-    print(f"   sketch >> GT → CountSketch still too lossy; raise INFLUCODER_PROJ_DIM further.")
+    # Summary table
+    if args.eval_gt:
+        tbl = [
+            ["Semantic Baseline",
+             f"{base_sketch['agg_spearman']:.4f}", f"{base_sketch['per_anchor_spearman_mean']:.4f}",
+             f"{base_gt['agg_spearman']:.4f}",     f"{base_gt['per_anchor_spearman_mean']:.4f}"],
+            ["Influence-Encoder",
+             f"{enc_sketch['agg_spearman']:.4f}",  f"{enc_sketch['per_anchor_spearman_mean']:.4f}",
+             f"{enc_gt['agg_spearman']:.4f}",       f"{enc_gt['per_anchor_spearman_mean']:.4f}"],
+        ]
+        print(tabulate(tbl,
+                       headers=["Method", f"Agg ρ sketch(d={sketch_dim})", "PA ρ sketch",
+                                f"Agg ρ GT(d={args.gt_proj_dim})", "PA ρ GT"],
+                       tablefmt="github"))
+        print(f"   sketch ≈ GT → CountSketch fine; gap is format/data-split.")
+        print(f"   sketch >> GT → CountSketch still too lossy; raise INFLUCODER_PROJ_DIM further.")
+    else:
+        tbl = [
+            ["Semantic Baseline",
+             f"{base_sketch['agg_spearman']:.4f}", f"{base_sketch['per_anchor_spearman_mean']:.4f}"],
+            ["Influence-Encoder",
+             f"{enc_sketch['agg_spearman']:.4f}",  f"{enc_sketch['per_anchor_spearman_mean']:.4f}"],
+        ]
+        print(tabulate(tbl,
+                       headers=["Method", f"Agg ρ sketch(d={sketch_dim})", "PA ρ sketch"],
+                       tablefmt="github"))
 
     # Save
     combined_metrics = {
         "untrained": base_sketch,
         "trained": enc_sketch,
-        "untrained_gt": base_gt,
-        "trained_gt": enc_gt,
+        **({"untrained_gt": base_gt, "trained_gt": enc_gt} if args.eval_gt else {}),
     }
     save_encoder_with_metadata(enc, args.output_dir, method_name="influence_encoder", args=args, metrics=combined_metrics)

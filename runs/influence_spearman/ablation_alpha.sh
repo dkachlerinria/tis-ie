@@ -61,26 +61,22 @@ rows = []
 for alpha in alphas:
     meta_path = os.path.join(ablation_dir, f"alpha_{alpha}", "metadata.json")
     if not os.path.exists(meta_path):
-        rows.append([alpha, "MISSING", "-", "-", "-"])
+        rows.append([alpha, "MISSING", "-"])
         continue
     with open(meta_path) as f:
         meta = json.load(f)
-    m = meta.get("metrics", {})
-    tr    = m.get("trained",    {})
-    tr_gt = m.get("trained_gt", {})
+    m  = meta.get("metrics", {})
+    tr = m.get("trained", {})
     rows.append([
         alpha,
         f"{tr.get('agg_spearman', 0.0):.4f}",
         f"{tr.get('per_anchor_spearman_mean', 0.0):.4f}",
-        f"{tr_gt.get('agg_spearman', 0.0):.4f}",
-        f"{tr_gt.get('per_anchor_spearman_mean', 0.0):.4f}",
     ])
 
-col_w = [7, 16, 14, 12, 10]
-header = ["alpha", "Agg ρ (sketch)", "PA ρ (sketch)", "Agg ρ (GT)", "PA ρ (GT)"]
+col_w  = [7, 16, 14]
+header = ["alpha", "Agg ρ (sketch)", "PA ρ (sketch)"]
 sep    = "  ".join("-" * w for w in col_w)
-fmt    = "  ".join(f"{h:>{w}}" for h, w in zip(header, col_w))
-print(fmt)
+print("  ".join(f"{h:>{w}}" for h, w in zip(header, col_w)))
 print(sep)
 for r in rows:
     print("  ".join(f"{v:>{w}}" for v, w in zip(r, col_w)))
