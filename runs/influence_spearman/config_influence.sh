@@ -23,6 +23,11 @@ export NUM_ANCHORS=100
 export BATCH_SIZE=1
 export GRAD_ACC=8
 
+# IProX sparsity — MUST match between train_iprox_proxy.sh and compute_iprox_scores.sh,
+# otherwise the LinearSVD layer structure (which layers get replaced + their ranks)
+# diverges between training and scoring → garbage gradients during scoring.
+export IPROX_SPARSITY=0.4
+
 # Projection dimensions
 export GT_PROJ_DIM=65536
 export LESS_PROJ_DIM=8192

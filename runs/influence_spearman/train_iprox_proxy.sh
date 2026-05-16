@@ -22,7 +22,7 @@ python iprox/train_iprox.py \
     --train_dataset     "${TRAIN_DATASET}" \
     --n_train_p         1500 \
     --pool_start_index  "${END_INDEX}" \
-    --sparsity          0.4 \
+    --sparsity          "${IPROX_SPARSITY}" \
     --batch_size        1 \
     --gradient_accumulation_steps 4 \
     --lambda_anchor     0.0 \
