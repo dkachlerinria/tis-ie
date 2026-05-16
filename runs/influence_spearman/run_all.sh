@@ -22,30 +22,48 @@ mkdir -p "$INFLUENCE_OUT"
 # Wipe all stale score/params artifacts so run_experiment only sees results
 # from this run — not leftover files from a previous invocation.
 rm -f "${INFLUENCE_OUT}"/*_scores.pt "${INFLUENCE_OUT}"/*_params.pt
-
-
-# COMPUTED FIRST
-bash runs/influence_spearman/compute_ground_truth.sh "$CFG"           || echo "Ground Truth failed, skipping"
-
-#bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG"       || echo "Influcoder failed, skipping"
-bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"           || echo "IProX failed, skipping"
-
-bash runs/influence_spearman/compute_less_scores.sh "$CFG"           || echo "LESS failed, skipping"
-#bash runs/influence_spearman/compute_less_small_scores.sh "$CFG"     || echo "LESS-small failed, skipping"
-bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"      || echo "Embedding failed, skipping"
-#bash runs/influence_spearman/compute_random_scores.sh "$CFG"         || echo "Random failed, skipping"
-#bash runs/influence_spearman/compute_logra_scores.sh "$CFG"          || echo "LoGRA failed, skipping"
-#bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"    || echo "LoGRA-small failed, skipping"
-bash runs/influence_spearman/compute_less_proxy_scores.sh "$CFG"     || echo "LESS-proxy failed, skipping"
-#bash runs/influence_spearman/compute_logra_proxy_scores.sh "$CFG"    || echo "LoGRA-proxy failed, skipping"
-# Force a fresh evaluation summary
 rm -f "${INFLUENCE_OUT}/results.json"
 
-python3 -m influence_eval.run_experiment \
-    --out_dir "${INFLUENCE_OUT}" \
-    --methods less less_small less_proxy embedding random logra_raw logra_fim logra_raw_small logra_fim_small logra_raw_proxy logra_fim_proxy influcoder iprox \
-    --gt_name ground_truth \
-    --seq_len "${FLOPS_SEQ_LEN}"
+ALL_METHODS="less less_small less_proxy embedding random logra_raw logra_fim logra_raw_small logra_fim_small logra_raw_proxy logra_fim_proxy influcoder iprox"
 
-echo
+# Print intermediate results after each method completes.
+# run_experiment silently skips methods whose files don't exist yet, so this
+# grows naturally as more methods finish.
+show_results() {
+    echo ""
+    python3 -m influence_eval.run_experiment \
+        --out_dir  "${INFLUENCE_OUT}" \
+        --methods  ${ALL_METHODS} \
+        --gt_name  ground_truth \
+        --seq_len  "${FLOPS_SEQ_LEN}" 2>/dev/null || true
+}
+
+# ── Ground truth (must run first — required for all Spearman scores) ──────────
+bash runs/influence_spearman/compute_ground_truth.sh "$CFG"           || echo "Ground Truth failed, skipping"
+
+# ── Methods (each prints a running table immediately on completion) ────────────
+bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"          && show_results || echo "IProX failed, skipping"
+
+bash runs/influence_spearman/compute_less_scores.sh "$CFG"           && show_results || echo "LESS failed, skipping"
+#bash runs/influence_spearman/compute_less_small_scores.sh "$CFG"    && show_results || echo "LESS-small failed, skipping"
+bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"      && show_results || echo "Embedding failed, skipping"
+#bash runs/influence_spearman/compute_random_scores.sh "$CFG"        && show_results || echo "Random failed, skipping"
+#bash runs/influence_spearman/compute_logra_scores.sh "$CFG"         && show_results || echo "LoGRA failed, skipping"
+#bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"   && show_results || echo "LoGRA-small failed, skipping"
+bash runs/influence_spearman/compute_less_proxy_scores.sh "$CFG"     && show_results || echo "LESS-proxy failed, skipping"
+#bash runs/influence_spearman/compute_logra_proxy_scores.sh "$CFG"   && show_results || echo "LoGRA-proxy failed, skipping"
+#bash runs/influence_spearman/compute_influcoder_scores.sh "$CFG"    && show_results || echo "Influcoder failed, skipping"
+
+# ── Final canonical write ─────────────────────────────────────────────────────
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "FINAL RESULTS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+python3 -m influence_eval.run_experiment \
+    --out_dir  "${INFLUENCE_OUT}" \
+    --methods  ${ALL_METHODS} \
+    --gt_name  ground_truth \
+    --seq_len  "${FLOPS_SEQ_LEN}"
+
+echo ""
 echo "Done. Results in: ${INFLUENCE_OUT}/results.json"
