@@ -48,6 +48,8 @@ def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, end_
             try: ds = load_dataset(dataset_name, split="test")
             except: ds = load_dataset(dataset_name, split="validation")
         
+        ds = ds.shuffle(seed=42)
+
         if end_index:
             ds = ds.select(range(min(end_index, len(ds))))
         elif n_samples:
@@ -70,6 +72,8 @@ def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, end_
             ds = load_dataset("json", data_files=[dataset_name])["train"]
         else:
             ds = load_dataset(dataset_name, split="train")
+
+        ds = ds.shuffle(seed=42)
 
         if end_index:
             ds = ds.select(range(min(end_index, len(ds))))

@@ -25,7 +25,7 @@ python iprox/train_iprox.py \
     --sparsity          "${IPROX_SPARSITY}" \
     --batch_size        2 \
     --gradient_accumulation_steps 4 \
-    --lambda_anchor     0.0 \
+    --lambda_anchor     0.5 \
     --epochs            10 \
     --max_seq_length    2048 \
     --output_dir        "${IPROX_PROXY_DIR}" \
