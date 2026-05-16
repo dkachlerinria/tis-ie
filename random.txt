@@ -4,6 +4,7 @@ ssh -J dkachler@ssh-lne.inria.fr dkachler@magnet6.lille.inria.fr
 
 oarsub -l gpu=1 -I -p gruss
 
+oarsub -l gpu=1,walltime=4 -I -p esterel42 -q besteffort
 
 bash runs/influence_spearman/stock_influcoder_gradients.sh runs/influence_spearman/config_influence_tiny.sh
 
