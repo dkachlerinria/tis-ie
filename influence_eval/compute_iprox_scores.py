@@ -41,13 +41,21 @@ def safe_normalize(grad, eps=1e-8):
     norm = torch.norm(grad)
     return grad / max(norm, eps)
 
+def _iter_tokenized_disk(path: str, device: str):
+    """Yield single-sample batches from a HF dataset saved to disk."""
+    from datasets import load_from_disk
+    ds = load_from_disk(path)
+    ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    for i in range(len(ds)):
+        row = ds[i]
+        yield {k: v.unsqueeze(0).to(device) for k, v in row.items()}
+
+
 def compute_iprox_scores(
     proxy_path: str,
     save_dir: str,
-    end_index: int,
-    num_anchors: int,
-    train_dataset_name: str,
-    dev_dataset_name: str,
+    tokenized_train_path: str,
+    tokenized_anchor_path: str,
     sparsity: float = 0.9,
     target_modules: list = None,
     out_name: str = "iprox",
@@ -65,7 +73,7 @@ def compute_iprox_scores(
 
     base_model = AutoModelForCausalLM.from_pretrained(
         proxy_path,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
         device_map="auto",
     )
 
@@ -84,46 +92,33 @@ def compute_iprox_scores(
     for p in proxy_model.parameters():
         p.requires_grad_(True)
 
-    # Load anchor (dev) data — same dolly file and same first N rows as training.
-    logger.info("📥 Loading anchor samples from %s (first %d)...", train_dataset_name, num_anchors)
-    if os.path.exists(train_dataset_name):
-        anchor_ds = load_dataset("json", data_files=[train_dataset_name])["train"]
-    else:
-        anchor_ds = load_dataset(train_dataset_name, split="train")
-    anchor_ds = anchor_ds.select(range(min(num_anchors, len(anchor_ds))))
+    # Anchor gradients — load the exact tokenized dataset saved by compute_gradient_scores.
+    from datasets import load_from_disk
+    anchor_ds = load_from_disk(tokenized_anchor_path)
+    anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    num_anchors = len(anchor_ds)
+    logger.info("📥 Loading %d anchor samples from %s", num_anchors, tokenized_anchor_path)
 
     dev_grads = []
-    for i in tqdm(range(len(anchor_ds)), desc="Dev Gradients"):
-        batch = encode_with_messages_format(anchor_ds[i], tokenizer, max_seq_length=2048, include_response=True)
-        for k in batch:
-            if torch.is_tensor(batch[k]):
-                batch[k] = batch[k].unsqueeze(0)
-
+    for i in tqdm(range(num_anchors), desc="Dev Gradients"):
+        batch = {k: anchor_ds[i][k].unsqueeze(0).to(device) for k in ["input_ids", "attention_mask", "labels"]}
         g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
         if g is not None:
             dev_grads.append(safe_normalize(g))
         else:
             dev_grads.append(torch.zeros(1))
 
-    dev_matrix = torch.stack(dev_grads) # [n_dev, dim]
+    dev_matrix = torch.stack(dev_grads)  # [n_anchors, dim]
 
-    # Load Train Data — same dolly file, first end_index rows.
-    if os.path.exists(train_dataset_name):
-        ds = load_dataset("json", data_files=[train_dataset_name])["train"]
-    else:
-        ds = load_dataset(train_dataset_name, split="train")
-    ds = ds.select(range(min(end_index, len(ds))))
+    # Train gradients — same pre-saved dataset the ground truth scored.
+    train_ds = load_from_disk(tokenized_train_path)
+    train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    n_train = len(train_ds)
+    logger.info("📊 Computing similarity matrix for %d training samples from %s", n_train, tokenized_train_path)
+    scores = torch.zeros((num_anchors, n_train), dtype=torch.float32)
 
-    # Compute Train Gradients and Similarity
-    logger.info("📊 Computing similarity matrix for %d training samples...", len(ds))
-    scores = torch.zeros((num_anchors, len(ds)), dtype=torch.float32)
-
-    for j in tqdm(range(len(ds)), desc="Train Similarity"):
-        batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=2048, include_response=True)
-        for k in batch:
-            if torch.is_tensor(batch[k]):
-                batch[k] = batch[k].unsqueeze(0)
-
+    for j in tqdm(range(n_train), desc="Train Similarity"):
+        batch = {k: train_ds[j][k].unsqueeze(0).to(device) for k in ["input_ids", "attention_mask", "labels"]}
         g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
         if g_t is not None:
             g_t_norm = safe_normalize(g_t)
@@ -145,7 +140,7 @@ def compute_iprox_scores(
         "model_name": proxy_path,
         "sparsity": sparsity,
         "method": "iprox",
-        "measured_flops": None,   # gradient-per-sample scoring; FLOPs not yet tracked
+        "measured_flops": None,
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
 
@@ -154,10 +149,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--proxy_path", required=True)
     p.add_argument("--save_dir", required=True)
-    p.add_argument("--end_index", type=int, required=True)
-    p.add_argument("--num_anchors", type=int, required=True)
-    p.add_argument("--train_dataset_name", type=str, default="Harvard-DCML/tulu-v2-197K-processed")
-    p.add_argument("--dev_dataset_name", type=str, default="bbh")
+    p.add_argument("--tokenized_train_path", required=True,
+                   help="Path to HF dataset saved by compute_gradient_scores (tokenized_train_ds).")
+    p.add_argument("--tokenized_anchor_path", required=True,
+                   help="Path to HF dataset saved by compute_gradient_scores (tokenized_anchor_ds).")
     p.add_argument("--sparsity", type=float, default=0.9)
     p.add_argument("--out_name", type=str, default="iprox")
     args = p.parse_args()
@@ -165,10 +160,8 @@ def main():
     compute_iprox_scores(
         proxy_path=args.proxy_path,
         save_dir=args.save_dir,
-        end_index=args.end_index,
-        num_anchors=args.num_anchors,
-        train_dataset_name=args.train_dataset_name,
-        dev_dataset_name=args.dev_dataset_name,
+        tokenized_train_path=args.tokenized_train_path,
+        tokenized_anchor_path=args.tokenized_anchor_path,
         sparsity=args.sparsity,
         out_name=args.out_name
     )
