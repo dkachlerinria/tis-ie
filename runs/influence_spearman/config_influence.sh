@@ -4,7 +4,7 @@
 # then layers experiment-specific knobs on top.
 
 # Model for influence calculations
-export INFLUENCE_MODEL="jhu-clsp/ettin-decoder-68m"
+export INFLUENCE_MODEL="google/gemma-3-270m-it"
 INFLUENCE_MODEL_SLUG=$(echo "${INFLUENCE_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
 # Proxy Model (smaller architecture used to approximate influence for the main model)
