@@ -30,7 +30,6 @@ python iprox/train_iprox.py \
     --epochs                       1 \
     --max_seq_length               2048 \
     --lr                           1e-4 \
-    --weight_decay                 0.01 \
     --seed                         42 \
     --output_dir                   "${IPROX_PROXY_DIR}"
 
