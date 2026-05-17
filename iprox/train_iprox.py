@@ -30,10 +30,11 @@ from iprox.utils.util import setseed
 def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules, out_path):
     """Compute IProX scores using the in-memory proxy (no save/load).
 
-    Runs immediately after training so the model is guaranteed to have correct
-    pretrained weights — this is the ground-truth check for whether training works.
-    Saves a [n_anchors, n_train] float32 score matrix to out_path.
+    Returns (scores, inference_time_s, measured_flops, grad_dim).
     """
+    import time
+    from influence_eval.flops_measure import flop_counter
+
     proxy_model.eval()
     for p in proxy_model.parameters():
         p.requires_grad_(True)
@@ -58,22 +59,30 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
         g = torch.cat(grads)
         return g / g.norm().clamp_min(1e-8)
 
-    anchor_grads = []
-    for i in tqdm(range(len(anchor_ds)), desc="[inline] anchor grads"):
-        g = _grad(anchor_ds[i])
-        if g is not None:
-            anchor_grads.append(g)
-    anchor_matrix = torch.stack(anchor_grads)
+    grad_dim = None
+    t0 = time.perf_counter()
+    with flop_counter() as counter:
+        anchor_grads = []
+        for i in tqdm(range(len(anchor_ds)), desc="[inline] anchor grads"):
+            g = _grad(anchor_ds[i])
+            if g is not None:
+                if grad_dim is None:
+                    grad_dim = int(g.shape[0])
+                anchor_grads.append(g)
+        anchor_matrix = torch.stack(anchor_grads)
 
-    scores = torch.zeros(len(anchor_grads), len(train_ds))
-    for j in tqdm(range(len(train_ds)), desc="[inline] train grads"):
-        g = _grad(train_ds[j])
-        if g is not None:
-            scores[:, j] = anchor_matrix @ g
+        scores = torch.zeros(len(anchor_grads), len(train_ds))
+        for j in tqdm(range(len(train_ds)), desc="[inline] train grads"):
+            g = _grad(train_ds[j])
+            if g is not None:
+                scores[:, j] = anchor_matrix @ g
+
+    inference_time_s = time.perf_counter() - t0
+    measured_flops = int(counter.get_total_flops())
 
     torch.save(scores, out_path)
     logger.info("[inline scoring] saved %s  shape=%s", out_path, tuple(scores.shape))
-    return scores
+    return scores, inference_time_s, measured_flops, grad_dim or 0
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -334,28 +343,55 @@ def main():
         train_pool_ds = train_pool.remove_columns(
             [c for c in train_pool.column_names if c not in ['input_ids', 'attention_mask', 'labels']]
         )
-        out_path = os.path.join(args.output_dir, "inline_iprox_scores.pt")
-        scores = score_proxy_inline(
-            proxy_model, train_pool_ds, anchor_ds,
-            device, args.target_modules, out_path,
-        )
-        logger.info("[inline scoring] score stats: min=%.4f max=%.4f mean=%.4f",
-                    scores.min().item(), scores.max().item(), scores.mean().item())
 
-        # Compare against ground-truth scores if they exist.
-        gt_path = os.path.join(os.path.dirname(args.output_dir), "ground_truth_scores.pt")
+        # Save to INFLUENCE_OUT (parent of iprox_proxy/) so run_experiment.py finds it.
+        score_dir = os.path.dirname(os.path.normpath(args.output_dir))
+        scores_path = os.path.join(score_dir, "iprox_scores.pt")
+        scores, inf_time_s, measured_flops, grad_dim = score_proxy_inline(
+            proxy_model, train_pool_ds, anchor_ds,
+            device, args.target_modules, scores_path,
+        )
+
+        n_samples = len(anchor_ds) + len(train_pool_ds)
+        from influence_eval.model_utils import count_params
+        proxy_params = count_params(proxy_model)
+        meta = {
+            **proxy_params,
+            "num_anchors":       int(scores.shape[0]),
+            "num_train":         int(scores.shape[1]),
+            "grad_dim":          int(grad_dim),
+            "model_name":        args.target_model,
+            "sparsity":          args.sparsity,
+            "method":            "iprox",
+            "measured_flops":    measured_flops,
+            "inference_time_s":  float(inf_time_s),
+            "time_per_sample_s": float(inf_time_s / max(n_samples, 1)),
+        }
+        torch.save(meta, os.path.join(score_dir, "iprox_params.pt"))
+
+        # Compute Spearman vs GT and print the full table row.
+        gt_path = os.path.join(score_dir, "ground_truth_scores.pt")
         if os.path.exists(gt_path):
             try:
                 from influence_eval.spearman import all_metrics
+                from influence_eval.flops import flops_for_method
                 gt_scores = torch.load(gt_path, map_location="cpu")
-                metrics = all_metrics(scores, gt_scores)
-                pa = metrics["per_anchor"]
-                logger.info(
-                    "[inline vs GT] per-anchor Spearman: mean=%.4f std=%.4f | "
-                    "agg_mean=%.4f agg_max=%.4f",
-                    pa["mean"], pa["std"],
-                    metrics["aggregated_mean"], metrics["aggregated_max"],
+                m = all_metrics(scores, gt_scores)
+                pa = m["per_anchor"]
+                flops_d = flops_for_method("iprox", meta, seq_len=args.max_seq_length)
+                tps_ms = meta["time_per_sample_s"] * 1000
+                header = (
+                    "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) "
+                    "| Total FLOPS | Inf. FLOPS | Inf. Time (s) | Time/Sample (ms) |"
                 )
+                sep = "|---|---|---|---|---|---|---|---|---|"
+                row = (
+                    f"| iprox | {pa['mean']:.4f} | {pa['std']:.4f} | "
+                    f"{m['aggregated_mean']:.4f} | {m['aggregated_max']:.4f} | "
+                    f"{flops_d['total']:.3e} | {flops_d['inference']:.3e} | "
+                    f"{inf_time_s:.2f} | {tps_ms:.2f} |"
+                )
+                logger.info("\n%s\n%s\n%s", header, sep, row)
             except Exception as e:
                 logger.warning("[inline vs GT] Could not compute Spearman: %s", e)
         else:
