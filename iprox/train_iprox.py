@@ -26,6 +26,55 @@ from iprox.utils.init_with_ipsvd import init_proxy_model_with_IPSVD
 from iprox.utils.grad_align import train_with_gradient_alignment
 from iprox.utils.util import setseed
 
+
+def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules, out_path):
+    """Compute IProX scores using the in-memory proxy (no save/load).
+
+    Runs immediately after training so the model is guaranteed to have correct
+    pretrained weights — this is the ground-truth check for whether training works.
+    Saves a [n_anchors, n_train] float32 score matrix to out_path.
+    """
+    proxy_model.eval()
+    for p in proxy_model.parameters():
+        p.requires_grad_(True)
+
+    def _grad(sample):
+        proxy_model.zero_grad(set_to_none=True)
+        inp = {
+            "input_ids":      torch.tensor(sample["input_ids"]).unsqueeze(0).to(device),
+            "attention_mask": torch.tensor(sample["attention_mask"]).unsqueeze(0).to(device),
+            "labels":         torch.tensor(sample["labels"]).unsqueeze(0).to(device),
+        }
+        proxy_model(**inp).loss.backward()
+        grads = []
+        for name, module in proxy_model.named_modules():
+            if any(name.endswith(tm) for tm in target_modules):
+                if hasattr(module, "linear_A") and hasattr(module, "linear_B"):
+                    if module.linear_A.grad is not None and module.linear_B.grad is not None:
+                        grads.append(module.linear_A.grad.detach().cpu().float().flatten())
+                        grads.append(module.linear_B.grad.detach().cpu().float().flatten())
+        if not grads:
+            return None
+        g = torch.cat(grads)
+        return g / g.norm().clamp_min(1e-8)
+
+    anchor_grads = []
+    for i in tqdm(range(len(anchor_ds)), desc="[inline] anchor grads"):
+        g = _grad(anchor_ds[i])
+        if g is not None:
+            anchor_grads.append(g)
+    anchor_matrix = torch.stack(anchor_grads)
+
+    scores = torch.zeros(len(anchor_grads), len(train_ds))
+    for j in tqdm(range(len(train_ds)), desc="[inline] train grads"):
+        g = _grad(train_ds[j])
+        if g is not None:
+            scores[:, j] = anchor_matrix @ g
+
+    torch.save(scores, out_path)
+    logger.info("[inline scoring] saved %s  shape=%s", out_path, tuple(scores.shape))
+    return scores
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -115,6 +164,9 @@ def main():
     # Output args
     parser.add_argument('--output_dir', type=str, default="./files/models/iprox_proxy")
     parser.add_argument('--seed', type=int, default=137)
+    parser.add_argument('--score_inline', action='store_true',
+                        help="After training, score the train pool against the next N dolly rows "
+                             "using the in-memory proxy (no save/load). Saves inline_iprox_scores.pt.")
     
     args = parser.parse_args()
     seed_everything(args.seed)
@@ -263,6 +315,49 @@ def main():
     target_model.config.save_pretrained(model_dir)
     tokenizer.save_pretrained(model_dir)
     logger.info(f"✅ IProX Proxy Model saved to {model_dir}")
+
+    # 7. Optional inline scoring — uses the in-memory proxy so loading bugs can't hide.
+    if args.score_inline and os.path.exists(args.train_dataset):
+        logger.info("🔬 Running inline scoring (no save/load)...")
+        anchor_start = args.pool_start_index + args.n_train_p
+        anchor_ds = load_data_split(
+            args.train_dataset, tokenizer,
+            n_samples=args.n_train_p,
+            start_index=anchor_start,
+            is_dev=False,
+        )
+        anchor_ds = anchor_ds.remove_columns(
+            [c for c in anchor_ds.column_names if c not in ['input_ids', 'attention_mask', 'labels']]
+        )
+        train_pool_ds = train_pool.remove_columns(
+            [c for c in train_pool.column_names if c not in ['input_ids', 'attention_mask', 'labels']]
+        )
+        out_path = os.path.join(args.output_dir, "inline_iprox_scores.pt")
+        scores = score_proxy_inline(
+            proxy_model, train_pool_ds, anchor_ds,
+            device, args.target_modules, out_path,
+        )
+        logger.info("[inline scoring] score stats: min=%.4f max=%.4f mean=%.4f",
+                    scores.min().item(), scores.max().item(), scores.mean().item())
+
+        # Compare against ground-truth scores if they exist.
+        gt_path = os.path.join(os.path.dirname(args.output_dir), "ground_truth_scores.pt")
+        if os.path.exists(gt_path):
+            try:
+                from influence_eval.spearman import all_metrics
+                gt_scores = torch.load(gt_path, map_location="cpu")
+                metrics = all_metrics(scores, gt_scores)
+                pa = metrics["per_anchor"]
+                logger.info(
+                    "[inline vs GT] per-anchor Spearman: mean=%.4f std=%.4f | "
+                    "agg_mean=%.4f agg_max=%.4f",
+                    pa["mean"], pa["std"],
+                    metrics["aggregated_mean"], metrics["aggregated_max"],
+                )
+            except Exception as e:
+                logger.warning("[inline vs GT] Could not compute Spearman: %s", e)
+        else:
+            logger.info("[inline vs GT] No GT scores found at %s — skipping Spearman.", gt_path)
 
 if __name__ == "__main__":
     main()

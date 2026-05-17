@@ -31,6 +31,7 @@ python iprox/train_iprox.py \
     --max_seq_length               2048 \
     --lr                           1e-4 \
     --seed                         42 \
-    --output_dir                   "${IPROX_PROXY_DIR}"
+    --output_dir                   "${IPROX_PROXY_DIR}" \
+    --score_inline
 
 # Test
