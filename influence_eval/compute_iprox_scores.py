@@ -52,6 +52,7 @@ def _iter_tokenized_disk(path: str, device: str):
 
 
 def compute_iprox_scores(
+    target_model_name: str,
     proxy_path: str,
     save_dir: str,
     tokenized_train_path: str,
@@ -66,13 +67,18 @@ def compute_iprox_scores(
     if target_modules is None:
         target_modules = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
 
-    logger.info("🤖 Loading Proxy Model: %s", proxy_path)
+    # Tokenizer lives in proxy_path (saved there by train_iprox.py).
     tokenizer = AutoTokenizer.from_pretrained(proxy_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # The original IProX design: save_proxy_model stores ONLY the SVD A/B factors.
+    # from_pretrained(proxy_path) would find keys like "q_proj.linear_A" which don't
+    # match any standard Linear key → all weights are randomly initialized → garbage.
+    # Load the base pretrained weights from the original model name instead.
+    logger.info("🤖 Loading base model from %s", target_model_name)
     base_model = AutoModelForCausalLM.from_pretrained(
-        proxy_path,
+        target_model_name,
         torch_dtype=torch.bfloat16,
         device_map="auto",
     )
@@ -86,6 +92,7 @@ def compute_iprox_scores(
         min_rank_multiple=1
     )
 
+    # Overlay the trained SVD factors onto the correct pretrained base.
     final_bin = os.path.join(proxy_path, "pytorch_model.bin")
     load_proxy_model(proxy_model, final_bin)
     proxy_model.eval()
@@ -147,7 +154,10 @@ def compute_iprox_scores(
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     p = argparse.ArgumentParser()
-    p.add_argument("--proxy_path", required=True)
+    p.add_argument("--target_model", required=True,
+                   help="Original pretrained model name/path used for proxy training (e.g. jhu-clsp/ettin-decoder-68m).")
+    p.add_argument("--proxy_path", required=True,
+                   help="Directory containing the trained SVD factors (pytorch_model.bin) and tokenizer.")
     p.add_argument("--save_dir", required=True)
     p.add_argument("--tokenized_train_path", required=True,
                    help="Path to HF dataset saved by compute_gradient_scores (tokenized_train_ds).")
@@ -158,6 +168,7 @@ def main():
     args = p.parse_args()
 
     compute_iprox_scores(
+        target_model_name=args.target_model,
         proxy_path=args.proxy_path,
         save_dir=args.save_dir,
         tokenized_train_path=args.tokenized_train_path,
