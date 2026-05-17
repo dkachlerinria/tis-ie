@@ -21,7 +21,7 @@ bash runs/influence_spearman/train_iprox_proxy.sh runs/influence_spearman/config
 
 bash runs/influence_spearman/ablation_alpha.sh runs/influence_spearman/config_influence_tiny.sh
 
-
+python init_iprox.py --model_name_or_path Qwen/Qwen2.5-0.5B --train_files data/train/processed/dolly/dolly_data.jsonl --sparsity 0.5 --init_method IPSVD --epochs 5 --batch_size 4 --output_dir ../models
 
 
 
