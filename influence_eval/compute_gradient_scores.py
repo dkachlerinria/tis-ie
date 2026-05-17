@@ -143,10 +143,22 @@ def compute_scores(
     )
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
 
-    if tulu_as_anchors or local_train_dataset:
-        # When using a local dataset, the pool IS the anchors (first num_anchors rows).
-        label = "local dataset" if local_train_dataset else "Tulu"
-        logger.info("🔄 DIAGNOSTIC: using first %d %s samples as anchors", num_anchors, label)
+    if local_train_dataset:
+        # Anchors are a disjoint slice: rows [end_index : end_index + num_anchors].
+        logger.info("🔄 DIAGNOSTIC: loading anchor slice [%d:%d] from %s",
+                    end_index, end_index + num_anchors, local_train_dataset)
+        raw_anchor = load_dataset("json", data_files=[local_train_dataset])["train"]
+        raw_anchor = raw_anchor.select(range(end_index, min(end_index + num_anchors, len(raw_anchor))))
+        anchor_ds = raw_anchor.map(
+            lambda x: encode_with_messages_format(
+                example=x, tokenizer=tokenizer, max_seq_length=2048, include_response=True,
+            ),
+            num_proc=1,
+            load_from_cache_file=False,
+        )
+        anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    elif tulu_as_anchors:
+        logger.info("🔄 DIAGNOSTIC: using first %d Tulu samples as anchors", num_anchors)
         anchor_ds = train_ds.select(range(min(num_anchors, len(train_ds))))
     else:
         anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)

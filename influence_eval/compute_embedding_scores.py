@@ -17,6 +17,22 @@ from influence_eval.model_utils import count_params  # only for the encoder para
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
 from representation.helper import batch_cosine_similarity
 
+
+def _local_texts(path: str, n: int, start: int = 0) -> list:
+    """Return n concatenated user+assistant strings from a local JSONL file, beginning at row `start`."""
+    import json
+    texts = []
+    with open(path) as f:
+        for i, line in enumerate(f):
+            if i < start:
+                continue
+            if len(texts) >= n:
+                break
+            item = json.loads(line)
+            text = " ".join(m["content"] for m in item.get("messages", []))
+            texts.append(text)
+    return texts
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +45,8 @@ def parse_args():
     p.add_argument("--dev_dataset_name", type=str, default="bbh")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--out_name", type=str, default="embedding")
+    p.add_argument("--local_train_dataset", type=str, default=None,
+                   help="Local JSONL path (e.g. dolly/dolly_data.jsonl). Uses first end_index rows for train and first num_anchors rows for anchors.")
     return p.parse_args()
 
 
@@ -49,7 +67,11 @@ def main():
     tokenizer = model.tokenizer
 
     # Load anchor texts outside FlopCounterMode (no GPU work).
-    anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
+    if args.local_train_dataset:
+        # Anchors are disjoint from train pool: rows [end_index : end_index + num_anchors].
+        anchor_texts = _local_texts(args.local_train_dataset, args.num_anchors, start=args.end_index)
+    else:
+        anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
 
     t0 = time.perf_counter()
     with flop_counter() as counter:
@@ -57,13 +79,13 @@ def main():
         train_embeds = compute_train_embeddings(
             model=model,
             tokenizer=tokenizer,
-            train_dataset_path=None,
+            train_dataset_path=args.local_train_dataset,  # None → tulu; path → local file
             batch_size=args.batch_size,
             start_index=0,
             end_index=args.end_index,
             debug=False,
         )
-        # Anchor embeddings from local BBH [0:num_anchors] (same slice as ground truth)
+        # Anchor embeddings
         anchor_embeds = torch.from_numpy(
             model.encode(
                 anchor_texts,

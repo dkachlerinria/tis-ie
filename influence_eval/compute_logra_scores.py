@@ -26,6 +26,13 @@ from less.utils.modeling_logra import LoGra
 from influence_eval.compute_gradient_scores import load_anchor_dataset, load_train_dataset
 from influence_eval.flops_measure import flop_counter
 
+
+def _load_tokenized_from_disk(path: str):
+    from datasets import load_from_disk
+    ds = load_from_disk(path)
+    ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    return ds
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +46,8 @@ def compute_logra_scores(
     mlp_only: bool,
     batch_size: int,
     out_suffix: str = "",
+    tokenized_train_path: str = None,
+    tokenized_anchor_path: str = None,
 ) -> None:
     """Writes BOTH variants in one run (loads the model once):
       - logra_raw_scores.pt: cosine on raw B-gradients (no FIM)
@@ -55,8 +64,17 @@ def compute_logra_scores(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    train_ds = load_train_dataset(tokenizer, end_index)
-    anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
+    if tokenized_train_path:
+        train_ds = _load_tokenized_from_disk(tokenized_train_path)
+        logger.info("Loaded %d train samples from %s", len(train_ds), tokenized_train_path)
+    else:
+        train_ds = load_train_dataset(tokenizer, end_index)
+
+    if tokenized_anchor_path:
+        anchor_ds = _load_tokenized_from_disk(tokenized_anchor_path)
+        logger.info("Loaded %d anchor samples from %s", len(anchor_ds), tokenized_anchor_path)
+    else:
+        anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
 
     # Shared encoding cost (train + anchors + FIM accumulation).
     t0_shared = time.perf_counter()
@@ -162,6 +180,10 @@ def parse_args():
     p.add_argument("--batch_size", type=int, default=1)
     p.add_argument("--out_suffix", type=str, default="",
                    help="Suffix appended to output filenames, e.g. '_small' → logra_raw_small_scores.pt")
+    p.add_argument("--tokenized_train_path", type=str, default=None,
+                   help="HF dataset saved by compute_gradient_scores (tokenized_train_ds). Overrides end_index.")
+    p.add_argument("--tokenized_anchor_path", type=str, default=None,
+                   help="HF dataset saved by compute_gradient_scores (tokenized_anchor_ds). Overrides dev_dataset_name.")
     return p.parse_args()
 
 
@@ -181,6 +203,8 @@ def main():
         mlp_only=not args.no_mlp_only,
         batch_size=args.batch_size,
         out_suffix=args.out_suffix,
+        tokenized_train_path=args.tokenized_train_path,
+        tokenized_anchor_path=args.tokenized_anchor_path,
     )
 
 

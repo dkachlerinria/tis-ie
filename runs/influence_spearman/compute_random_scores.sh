@@ -6,8 +6,8 @@ source "$CFG"
 mkdir -p "$INFLUENCE_OUT"
 
 python3 -m influence_eval.compute_random_scores \
-    --save_dir "${INFLUENCE_OUT}" \
-    --out_name "random" \
-    --end_index "${END_INDEX}" \
-    --num_anchors "${NUM_ANCHORS}" \
-    --seed "${RANDOM_SEED}"
+    --save_dir    "${INFLUENCE_OUT}" \
+    --out_name    "random" \
+    --end_index   100 \
+    --num_anchors 100 \
+    --seed        "${RANDOM_SEED}"

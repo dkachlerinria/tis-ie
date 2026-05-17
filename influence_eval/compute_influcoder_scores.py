@@ -15,6 +15,21 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForCausalLM
 
 from influence_eval.bbh_data import bbh_texts_for_encoder
+
+
+def _local_texts(path: str, n: int, start: int = 0) -> list:
+    import json
+    texts = []
+    with open(path) as f:
+        for i, line in enumerate(f):
+            if i < start:
+                continue
+            if len(texts) >= n:
+                break
+            item = json.loads(line)
+            text = " ".join(m["content"] for m in item.get("messages", []))
+            texts.append(text)
+    return texts
 from influence_eval.flops_measure import flop_counter, load_phase_flops, load_phase_timing
 from influence_eval.model_utils import count_params
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
@@ -55,6 +70,7 @@ def compute_influcoder_scores(
     training_timing_path: str = None,
     batch_size: int = 32,
     out_name: str = "influcoder",
+    local_train_dataset: str = None,
 ) -> None:
     os.makedirs(save_dir, exist_ok=True)
 
@@ -64,14 +80,18 @@ def compute_influcoder_scores(
         model.to("cuda")
     tokenizer = model.tokenizer
 
-    anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
+    if local_train_dataset:
+        # Anchors are disjoint from train pool: rows [end_index : end_index + num_anchors].
+        anchor_texts = _local_texts(local_train_dataset, num_anchors, start=end_index)
+    else:
+        anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
 
     t0 = time.perf_counter()
     with flop_counter() as counter:
         train_embeds = compute_train_embeddings(
             model=model,
             tokenizer=tokenizer,
-            train_dataset_path=None,
+            train_dataset_path=local_train_dataset,
             batch_size=batch_size,
             start_index=0,
             end_index=end_index,
@@ -176,6 +196,8 @@ def parse_args():
                    help="${INFLUCODER_ENCODER_DIR}/_timing.json — written by train_influence_encoder.py.")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--out_name", type=str, default="influcoder")
+    p.add_argument("--local_train_dataset", type=str, default=None,
+                   help="Local JSONL path (e.g. dolly/dolly_data.jsonl). Overrides tulu for both train and anchor texts.")
     return p.parse_args()
 
 
@@ -201,6 +223,7 @@ def main():
         training_timing_path=args.training_timing_path,
         batch_size=args.batch_size,
         out_name=args.out_name,
+        local_train_dataset=args.local_train_dataset,
     )
 
 
