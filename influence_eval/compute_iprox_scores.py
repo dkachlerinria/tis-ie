@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import torch
@@ -73,13 +72,12 @@ def compute_iprox_scores(
         tokenizer.pad_token = tokenizer.eos_token
 
     # save_proxy_model stores ONLY the SVD A/B factors, so from_pretrained(proxy_path)
-    # would leave all standard weights randomly initialized.  Instead, read the original
-    # model name from the config.json that train_iprox.py already saves via
-    # target_model.config.save_pretrained(model_dir) — it includes "_name_or_path".
-    config_path = os.path.join(proxy_path, "config.json")
-    with open(config_path) as f:
-        base_model_name = json.load(f)["_name_or_path"]
-    logger.info("🤖 Loading base model from config._name_or_path: %s", base_model_name)
+    # would leave all standard weights randomly initialized.  Read the original model
+    # name from base_model.txt written by train_iprox.py at save time.
+    base_model_file = os.path.join(proxy_path, "base_model.txt")
+    with open(base_model_file) as f:
+        base_model_name = f.read().strip()
+    logger.info("🤖 Loading base model from base_model.txt: %s", base_model_name)
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
         torch_dtype=torch.bfloat16,

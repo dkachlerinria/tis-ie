@@ -314,6 +314,8 @@ def main():
     
     target_model.config.save_pretrained(model_dir)
     tokenizer.save_pretrained(model_dir)
+    with open(os.path.join(model_dir, "base_model.txt"), "w") as f:
+        f.write(args.target_model)
     logger.info(f"✅ IProX Proxy Model saved to {model_dir}")
 
     # 7. Optional inline scoring — uses the in-memory proxy so loading bugs can't hide.
