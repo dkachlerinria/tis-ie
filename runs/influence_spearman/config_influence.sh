@@ -4,7 +4,7 @@
 # then layers experiment-specific knobs on top.
 
 # Model for influence calculations
-export INFLUENCE_MODEL="Qwen/Qwen3-0.6B"
+export INFLUENCE_MODEL="google/gemma-3-270m"
 INFLUENCE_MODEL_SLUG=$(echo "${INFLUENCE_MODEL}" | tr '[:upper:]' '[:lower:]' | sed 's|.*/||')
 
 # Proxy Model (smaller architecture used to approximate influence for the main model)
@@ -26,7 +26,7 @@ export GRAD_ACC=8
 # IProX sparsity — MUST match between train_iprox_proxy.sh and compute_iprox_scores.sh,
 # otherwise the LinearSVD layer structure (which layers get replaced + their ranks)
 # diverges between training and scoring → garbage gradients during scoring.
-export IPROX_SPARSITY=0.4
+export IPROX_SPARSITY=0.5
 
 # Projection dimensions
 export GT_PROJ_DIM=65536
