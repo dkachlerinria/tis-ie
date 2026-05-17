@@ -119,13 +119,21 @@ def compute_scores(
     dev_dataset_name: str,
     project_interval: int,
     save_grads: bool,
+    tulu_as_anchors: bool = False,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
 
     # Load datasets outside FlopCounterMode (data loading is not GPU work).
     train_ds = load_train_dataset(tokenizer, end_index)
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
-    anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
+
+    if tulu_as_anchors:
+        # Diagnostic: use first num_anchors Tulu samples as anchors — same domain
+        # and format (encode_with_messages_format) as the train pool.
+        logger.info("🔄 DIAGNOSTIC: using first %d Tulu samples as anchors", num_anchors)
+        anchor_ds = train_ds.select(range(min(num_anchors, len(train_ds))))
+    else:
+        anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
     anchor_dl = torch.utils.data.DataLoader(anchor_ds, batch_size=1, shuffle=False)
 
     logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
@@ -199,6 +207,8 @@ def parse_args():
     p.add_argument("--lora_seed", type=int, default=0)
     p.add_argument("--project_interval", type=int, default=8)
     p.add_argument("--save_grads", action="store_true")
+    p.add_argument("--tulu_as_anchors", action="store_true",
+                   help="Diagnostic: use first --num_anchors Tulu samples as anchors instead of BBH.")
     return p.parse_args()
 
 
@@ -234,6 +244,7 @@ def main():
         dev_dataset_name=args.dev_dataset_name,
         project_interval=args.project_interval,
         save_grads=args.save_grads,
+        tulu_as_anchors=args.tulu_as_anchors,
     )
 
     # Save param counts alongside scores so FLOPS can read them later

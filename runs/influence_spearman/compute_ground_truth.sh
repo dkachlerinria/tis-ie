@@ -19,4 +19,5 @@ python3 -m influence_eval.compute_gradient_scores \
     --lora_alpha "${LORA_ALPHA}" \
     --lora_dropout "${LORA_DROPOUT}" \
     --lora_seed "${LORA_SEED}" \
-    --project_interval "${PROJECT_INTERVAL}"
+    --project_interval "${PROJECT_INTERVAL}" \
+    --tulu_as_anchors   # DIAGNOSTIC: comment out to restore BBH anchors
