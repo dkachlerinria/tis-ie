@@ -16,11 +16,10 @@ fi
 echo "🧮 Computing IProX similarity matrix for Spearman evaluation..."
 
 python3 -m influence_eval.compute_iprox_scores \
-    --proxy_path           "$IPROX_PROXY_DIR" \
-    --target_model         "${INFLUENCE_MODEL}" \
-    --save_dir             "${INFLUENCE_OUT}" \
-    --tokenized_train_path "${INFLUENCE_OUT}/tokenized_train_ds" \
-    --num_anchors          "${NUM_ANCHORS}" \
-    --sparsity             "${IPROX_SPARSITY}" \
-    --out_name             "iprox" \
-    --tulu_as_anchors      # DIAGNOSTIC: comment out to use BBH anchors
+    --proxy_path         "$IPROX_PROXY_DIR" \
+    --save_dir           "${INFLUENCE_OUT}" \
+    --train_dataset_name "dolly/dolly_data.jsonl" \
+    --end_index          100 \
+    --num_anchors        100 \
+    --sparsity           "${IPROX_SPARSITY}" \
+    --out_name           "iprox"

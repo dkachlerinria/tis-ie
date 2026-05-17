@@ -19,14 +19,14 @@ rm -rf "${IPROX_PROXY_DIR}/model"
 
 python iprox/train_iprox.py \
     --target_model                 "${INFLUENCE_MODEL}" \
-    --train_dataset                "${TRAIN_DATASET}" \
-    --n_train_p                    300 \
-    --pool_start_index             "${END_INDEX}" \
+    --train_dataset                "dolly/dolly_data.jsonl" \
+    --n_train_p                    100 \
+    --pool_start_index             0 \
     --init_method                  IPSVD \
     --sparsity                     "${IPROX_SPARSITY}" \
     --batch_size                   4 \
     --gradient_accumulation_steps  1 \
-    --lambda_anchor                0.1 \
+    --lambda_anchor                0.01 \
     --epochs                       1 \
     --max_seq_length               2048 \
     --lr                           1e-4 \

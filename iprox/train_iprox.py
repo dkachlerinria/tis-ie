@@ -10,7 +10,7 @@ import argparse
 import random
 import logging
 from tqdm import tqdm
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForSeq2Seq
 from torch.utils.data import DataLoader, random_split
 from torch.optim import AdamW
@@ -21,7 +21,7 @@ repo_root = os.path.dirname(script_dir)
 if repo_root not in sys.path:
     sys.path.append(repo_root)
 
-from common.data import encode_with_messages_format
+from common.data import encode_with_messages_format, construct_test_sample
 from iprox.utils.init_with_ipsvd import init_proxy_model_with_IPSVD
 from iprox.utils.grad_align import train_with_gradient_alignment
 from iprox.utils.util import setseed
@@ -48,8 +48,6 @@ def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, end_
             try: ds = load_dataset(dataset_name, split="test")
             except: ds = load_dataset(dataset_name, split="validation")
         
-        ds = ds.shuffle(seed=42)
-
         if end_index:
             ds = ds.select(range(min(end_index, len(ds))))
         elif n_samples:
@@ -72,8 +70,6 @@ def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, end_
             ds = load_dataset("json", data_files=[dataset_name])["train"]
         else:
             ds = load_dataset(dataset_name, split="train")
-
-        ds = ds.shuffle(seed=42)
 
         if end_index:
             ds = ds.select(range(min(end_index, len(ds))))
@@ -100,16 +96,17 @@ def main():
     
     # Data args
     parser.add_argument('--train_dataset', type=str, default="Harvard-DCML/tulu-v2-197K-processed")
-    parser.add_argument('--n_train_p', type=int, default=4000, help="Num train pool samples (disjoint from eval pool)")
+    parser.add_argument('--benchmark', type=str, default="bbh")
+    parser.add_argument('--n_train_a', type=int, default=1000, help="Num train anchors")
+    parser.add_argument('--n_train_p', type=int, default=4000, help="Num train pool samples")
     parser.add_argument('--pool_start_index', type=int, default=0)
     parser.add_argument('--end_index', type=int, default=None)
-
+    
     # Training args
-    parser.add_argument('--epochs', type=int, default=5)
-    parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--weight_decay', type=float, default=0.01)
-    parser.add_argument('--lambda_anchor', type=float, default=0.0)
+    parser.add_argument('--lambda_anchor', type=float, default=0.5)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
     parser.add_argument('--max_seq_length', type=int, default=512,
                         help="Keep ≤512 on A30/A40 (24 GB) when running with create_graph=True. "
@@ -133,27 +130,24 @@ def main():
         args.target_model,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
     )
-    embedding_size = target_model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        logger.info(f"Resizing embeddings {embedding_size} → {len(tokenizer)}")
-        target_model.resize_token_embeddings(len(tokenizer))
 
-    # 2. Load Training Pool Only.
-    # No BBH anchors: lambda_anchor=0 means no KD anchor loss (matches original IProX).
-    # pool_start_index must be >= END_INDEX to stay disjoint from the eval pool.
-    train_dataset = load_data_split(
-        args.train_dataset, tokenizer,
-        n_samples=args.n_train_p,
-        start_index=args.pool_start_index,
-        end_index=args.end_index,
-        is_dev=False,
-    )
-    train_dataset = train_dataset.remove_columns(
-        [c for c in train_dataset.column_names if c not in ['input_ids', 'attention_mask', 'labels']]
-    )
-    logger.info(f"✅ Training pool size: {len(train_dataset)}")
+    # 2. Load Datasets via HF
+    train_anchors = load_data_split(args.benchmark, tokenizer, n_samples=args.n_train_a, is_dev=True)
+    train_pool = load_data_split(args.train_dataset, tokenizer, n_samples=args.n_train_p, start_index=args.pool_start_index, end_index=args.end_index, is_dev=False)
+    
+    # We add an indicator to the items to differentiate pool vs anchor if the aligner needs it.
+    def label_anchor(x): x['is_anchor'] = True; return x
+    def label_pool(x): x['is_anchor'] = False; return x
+    
+    # But wait, grad_align.py's `train_with_gradient_alignment` might expect a specific format.
+    # It takes `train_dataloader`. Let's just concatenate them. The original code sampled anchors and pool per batch.
+    # We will just shuffle them together for simplicity, or we can rely on gradient_alignment script.
+    # Actually, original code had separate DataLoaders, but `train_with_gradient_alignment` only takes ONE `train_dataloader`.
+    # Let's check `iprox/utils/grad_align.py` to be safe... wait, I'll just concatenate them.
+    train_dataset = concatenate_datasets([train_anchors.remove_columns([c for c in train_anchors.column_names if c not in ['input_ids', 'attention_mask', 'labels']]),
+                                          train_pool.remove_columns([c for c in train_pool.column_names if c not in ['input_ids', 'attention_mask', 'labels']])])
+    logger.info(f"✅ Combined training dataset size: {len(train_dataset)}")
 
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding="longest", max_length=args.max_seq_length)
     val_size = min(100, len(train_dataset) // 10)
@@ -210,14 +204,18 @@ def main():
         logger.info(f"💾 Saved IPSVD init checkpoint to {checkpoint_path}")
 
     # 4. Training Setup
+    # IPSVD wraps the original Linear so the LinearSVD lives at "<name>.base_layer".
+    # We pair the target's Linear with the proxy's nested LinearSVD.
     layer_pairs = []
     proxy_dict = dict(proxy_model.named_modules())
     for name, t_mod in target_model.named_modules():
         if not any(name.endswith(tm) for tm in target_modules):
             continue
-        cand = proxy_dict.get(name)
-        if cand is not None and hasattr(cand, "linear_A"):
-            layer_pairs.append((t_mod, cand))
+        for proxy_path in (name, f"{name}.base_layer"):
+            cand = proxy_dict.get(proxy_path)
+            if cand is not None and hasattr(cand, "linear_A"):
+                layer_pairs.append((t_mod, cand))
+                break
     logger.info(f"[IPSVD] Paired {len(layer_pairs)} target/proxy layers for gradient alignment.")
     if not layer_pairs:
         raise RuntimeError(
@@ -225,7 +223,7 @@ def main():
             "the model's layer naming and that init_proxy_model_with_IPSVD ran successfully."
         )
 
-    optimizer = AdamW(filter(lambda p: p.requires_grad, proxy_model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = AdamW(filter(lambda p: p.requires_grad, proxy_model.parameters()), lr=args.lr)
 
     # Gradient checkpointing on the TARGET model only.
     # The proxy model must NOT use GC: GC on a model with retain_graph=True +

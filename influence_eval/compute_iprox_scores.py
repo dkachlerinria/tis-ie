@@ -1,15 +1,15 @@
 import argparse
 import logging
 import os
-import time
 import torch
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from datasets import load_dataset
 
-from influence_eval.flops_measure import flop_counter
 from influence_eval.model_utils import count_params
 from iprox.utils.init_with_ipsvd import init_proxy_model_with_IPSVD, load_proxy_model
+from common.data import encode_with_messages_format
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +43,11 @@ def safe_normalize(grad, eps=1e-8):
 
 def compute_iprox_scores(
     proxy_path: str,
-    target_model: str,
     save_dir: str,
-    tokenized_train_path: str,
+    end_index: int,
     num_anchors: int,
-    tokenized_anchor_path: str = None,
-    tulu_as_anchors: bool = False,
+    train_dataset_name: str,
+    dev_dataset_name: str,
     sparsity: float = 0.9,
     target_modules: list = None,
     out_name: str = "iprox",
@@ -59,25 +58,15 @@ def compute_iprox_scores(
     if target_modules is None:
         target_modules = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
 
-    # Tokenizer comes from the saved proxy dir (matches what training used).
-    logger.info("🔤 Loading tokenizer from proxy dir: %s", proxy_path)
+    logger.info("🤖 Loading Proxy Model: %s", proxy_path)
     tokenizer = AutoTokenizer.from_pretrained(proxy_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Load base model from the SAVED PROXY DIRECTORY (not the hub model).
-    # proxy_path/pytorch_model.bin contains only SVD factor keys (no standard
-    # model keys), so from_pretrained default-inits the non-SVD layers.
-    # This matches the state the model was in when gradient alignment was trained
-    # (non-SVD layers at default init), keeping A,B in the correct gradient space.
-    # Loading pretrained weights instead causes the large baseline loss to dominate
-    # and destroy the alignment signal.
-    logger.info("🤖 Loading base model from proxy dir: %s", proxy_path)
     base_model = AutoModelForCausalLM.from_pretrained(
         proxy_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="auto",
-        attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
     )
 
     proxy_model = init_proxy_model_with_IPSVD(
@@ -90,128 +79,96 @@ def compute_iprox_scores(
     )
 
     final_bin = os.path.join(proxy_path, "pytorch_model.bin")
-    logger.info("📥 Loading trained LinearSVD factors from: %s", final_bin)
     load_proxy_model(proxy_model, final_bin)
-    proxy_params = count_params(proxy_model)
     proxy_model.eval()
     for p in proxy_model.parameters():
         p.requires_grad_(True)
 
-    from datasets import load_from_disk, Dataset as HFDataset
-    from common.data import encode_with_messages_format as _emf
-
-    logger.info("📥 Loading GT-tokenized train dataset from: %s", tokenized_train_path)
-    train_ds = load_from_disk(tokenized_train_path)
-    train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
-
-    if tulu_as_anchors:
-        # Diagnostic mode: use first num_anchors Tulu train samples as anchors.
-        # Both anchors and train are now Tulu with encode_with_messages_format —
-        # same domain, same format. High Spearman here confirms gradient alignment
-        # is working; if still low, the proxy itself is broken.
-        logger.info("🔄 DIAGNOSTIC: using first %d Tulu train samples as anchors", num_anchors)
-        anchor_ds = train_ds.select(range(min(num_anchors, len(train_ds))))
+    # Load anchor (dev) data — same dolly file and same first N rows as training.
+    logger.info("📥 Loading anchor samples from %s (first %d)...", train_dataset_name, num_anchors)
+    if os.path.exists(train_dataset_name):
+        anchor_ds = load_dataset("json", data_files=[train_dataset_name])["train"]
     else:
-        # Normal mode: BBH anchors with encode_with_messages_format (same format
-        # as the Tulu train pool — consistent within IProX, unlike construct_test_sample).
-        from influence_eval.bbh_data import load_bbh_samples
-        logger.info("📥 Loading %d BBH anchors (encode_with_messages_format)...", num_anchors)
-        anchor_samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
-        msgs = [{"messages": [{"role": "user", "content": s["prompt"]},
-                               {"role": "assistant", "content": s["response"]}]}
-                for s in anchor_samples]
-        anchor_hf = HFDataset.from_list(msgs)
-        anchor_hf = anchor_hf.map(
-            lambda x: _emf(x, tokenizer, max_seq_length=2048, include_response=True),
-            num_proc=1, load_from_cache_file=False,
-        )
-        anchor_hf.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
-        anchor_ds = anchor_hf
+        anchor_ds = load_dataset(train_dataset_name, split="train")
+    anchor_ds = anchor_ds.select(range(min(num_anchors, len(anchor_ds))))
 
-    logger.info("Anchors: %d samples | Train: %d samples", len(anchor_ds), len(train_ds))
+    dev_grads = []
+    for i in tqdm(range(len(anchor_ds)), desc="Dev Gradients"):
+        batch = encode_with_messages_format(anchor_ds[i], tokenizer, max_seq_length=2048, include_response=True)
+        for k in batch:
+            if torch.is_tensor(batch[k]):
+                batch[k] = batch[k].unsqueeze(0)
 
-    # Compute gradients and score matrix
-    logger.info("📊 Computing similarity matrix for %d training samples...", len(train_ds))
-    scores = torch.zeros((len(anchor_ds), len(train_ds)), dtype=torch.float32)
+        g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+        if g is not None:
+            dev_grads.append(safe_normalize(g))
+        else:
+            dev_grads.append(torch.zeros(1))
 
-    t0 = time.perf_counter()
-    with flop_counter() as counter:
-        dev_grads = []
-        grad_dim = None
-        for i in tqdm(range(len(anchor_ds)), desc="Anchor Gradients"):
-            batch = {k: anchor_ds[i][k].unsqueeze(0) for k in ["input_ids", "attention_mask", "labels"]}
-            g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
-            torch.cuda.empty_cache()  # free activations from backward immediately
-            if g is not None:
-                if grad_dim is None:
-                    grad_dim = int(g.shape[0])
-                # Store as float16 to halve CPU RAM usage for the dev_matrix
-                dev_grads.append(safe_normalize(g).half())
-            else:
-                dev_grads.append(torch.zeros(1, dtype=torch.float16))
+    dev_matrix = torch.stack(dev_grads) # [n_dev, dim]
 
-        # [n_anchors, grad_dim] in float16 — dot products cast back to float32
-        dev_matrix = torch.stack(dev_grads)
+    # Load Train Data — same dolly file, first end_index rows.
+    if os.path.exists(train_dataset_name):
+        ds = load_dataset("json", data_files=[train_dataset_name])["train"]
+    else:
+        ds = load_dataset(train_dataset_name, split="train")
+    ds = ds.select(range(min(end_index, len(ds))))
 
-        for j in tqdm(range(len(train_ds)), desc="Train Similarity"):
-            batch = {k: train_ds[j][k].unsqueeze(0) for k in ["input_ids", "attention_mask", "labels"]}
-            g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+    # Compute Train Gradients and Similarity
+    logger.info("📊 Computing similarity matrix for %d training samples...", len(ds))
+    scores = torch.zeros((num_anchors, len(ds)), dtype=torch.float32)
+
+    for j in tqdm(range(len(ds)), desc="Train Similarity"):
+        batch = encode_with_messages_format(ds[j], tokenizer, max_seq_length=2048, include_response=True)
+        for k in batch:
+            if torch.is_tensor(batch[k]):
+                batch[k] = batch[k].unsqueeze(0)
+
+        g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+        if g_t is not None:
+            g_t_norm = safe_normalize(g_t)
+            scores[:, j] = dev_matrix @ g_t_norm
+
+        if j % 1000 == 0:
             torch.cuda.empty_cache()
-            if g_t is not None:
-                scores[:, j] = (dev_matrix @ safe_normalize(g_t).half()).float()
-
-    inference_time_s = time.perf_counter() - t0
-    measured_flops = int(counter.get_total_flops())
-    n_samples = len(anchor_ds) + len(train_ds)
-    time_per_sample_s = inference_time_s / max(n_samples, 1)
 
     # Save
     out_path = os.path.join(save_dir, f"{out_name}_scores.pt")
     torch.save(scores, out_path)
     logger.info("Saved score matrix: %s shape=%s", out_path, tuple(scores.shape))
 
+    proxy_params = count_params(proxy_model)
     meta = {
         **proxy_params,
         "num_anchors": int(scores.shape[0]),
         "num_train": int(scores.shape[1]),
-        "grad_dim": grad_dim,
-        "model_name": target_model,
-        "proxy_path": proxy_path,
+        "model_name": proxy_path,
         "sparsity": sparsity,
         "method": "iprox",
-        "measured_flops": measured_flops,
-        "inference_time_s": float(inference_time_s),
-        "time_per_sample_s": float(time_per_sample_s),
+        "measured_flops": None,   # gradient-per-sample scoring; FLOPs not yet tracked
     }
     torch.save(meta, os.path.join(save_dir, f"{out_name}_params.pt"))
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     p = argparse.ArgumentParser()
-    p.add_argument("--proxy_path", required=True,
-                   help="Directory with the saved LinearSVD factors (pytorch_model.bin) + tokenizer.")
-    p.add_argument("--target_model", required=True,
-                   help="Original base model (e.g. Qwen/Qwen3-0.6B).")
+    p.add_argument("--proxy_path", required=True)
     p.add_argument("--save_dir", required=True)
-    p.add_argument("--tokenized_train_path", required=True,
-                   help="Path to tokenized_train_ds saved by compute_ground_truth.sh.")
+    p.add_argument("--end_index", type=int, required=True)
     p.add_argument("--num_anchors", type=int, required=True)
-    p.add_argument("--tokenized_anchor_path", type=str, default=None,
-                   help="Path to tokenized_anchor_ds (unused when --tulu_as_anchors).")
-    p.add_argument("--tulu_as_anchors", action="store_true",
-                   help="Diagnostic: use first --num_anchors Tulu train samples as anchors.")
+    p.add_argument("--train_dataset_name", type=str, default="Harvard-DCML/tulu-v2-197K-processed")
+    p.add_argument("--dev_dataset_name", type=str, default="bbh")
     p.add_argument("--sparsity", type=float, default=0.9)
     p.add_argument("--out_name", type=str, default="iprox")
     args = p.parse_args()
 
     compute_iprox_scores(
         proxy_path=args.proxy_path,
-        target_model=args.target_model,
         save_dir=args.save_dir,
-        tokenized_train_path=args.tokenized_train_path,
+        end_index=args.end_index,
         num_anchors=args.num_anchors,
-        tokenized_anchor_path=args.tokenized_anchor_path,
-        tulu_as_anchors=args.tulu_as_anchors,
+        train_dataset_name=args.train_dataset_name,
+        dev_dataset_name=args.dev_dataset_name,
         sparsity=args.sparsity,
         out_name=args.out_name
     )

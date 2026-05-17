@@ -110,10 +110,11 @@ def train_with_gradient_alignment(
     # KD loss
     kl_loss_fn = nn.KLDivLoss(reduction='none', log_target=True)
 
-    # _sdpa_math_ctx() (used in the proxy forward below) forces MATH backend for
-    # SDPA, which is compatible with create_graph=True. Setting eager globally would
-    # bypass SDPA entirely, preventing _sdpa_math_ctx() from having any effect and
-    # materialising large O(seq^2) attention matrices that OOM with create_graph=True.
+    # Use SDPA if available (don't force eager which is memory-heavy)
+    try:
+        from torch.nn.attention import SDPBackend
+    except ImportError:
+        pass
 
     steps_per_epoch = max(1, len(train_dataloader) // max(1, gradient_accumulation_steps))
     total_steps = steps_per_epoch * epochs
@@ -235,24 +236,25 @@ def train_with_gradient_alignment(
                     # for 28-layer model) before the KD computation and backward.
                     del t_grads_detached
 
-                    # KD Loss — skipped entirely when lambda_anchor == 0 to avoid
-                    # allocating large (B, T, vocab) tensors for no effect.
+                    # KD Loss — chunked over sequence length to avoid allocating a
+                    # full (B, T, vocab) float32 tensor at once (764 MB+ for Qwen3).
+                    # Each chunk only needs ~2 × kd_chunk × vocab × 4 bytes (~40 MB
+                    # at kd_chunk=32 vs 764 MB for the full sequence).
+                    tok_mask = (batch["labels"] != -100).float() if "labels" in batch else batch["attention_mask"].float()
+                    valid = tok_mask.sum().clamp_min(1.0)
                     l_kd = torch.zeros((), device=master_dev)
-                    if lambda_anchor > 0:
-                        # Chunked over sequence length to avoid allocating a full
-                        # (B, T, vocab) float32 tensor at once (764 MB+ for Qwen3).
-                        tok_mask = (batch["labels"] != -100).float() if "labels" in batch else batch["attention_mask"].float()
-                        valid = tok_mask.sum().clamp_min(1.0)
-                        _kd_chunk = 32
-                        T = t_logits_detached.size(1)
-                        for _s in range(0, T, _kd_chunk):
-                            _e = min(_s + _kd_chunk, T)
-                            _t = F.log_softmax(t_logits_detached[:, _s:_e].float() / temperature, dim=-1)
-                            _p = F.log_softmax(p_logits[:, _s:_e].float() / temperature, dim=-1)
-                            _kl = kl_loss_fn(_p, _t).sum(dim=-1)          # (B, chunk_len)
-                            l_kd = l_kd + (_kl * tok_mask[:, _s:_e]).sum() / valid
-                            del _t, _p, _kl
-                        l_kd = l_kd * (temperature ** 2)
+                    _kd_chunk = 32
+                    T = t_logits_detached.size(1)
+                    for _s in range(0, T, _kd_chunk):
+                        _e = min(_s + _kd_chunk, T)
+                        _t = F.log_softmax(t_logits_detached[:, _s:_e].float() / temperature, dim=-1)
+                        _p = F.log_softmax(p_logits[:, _s:_e].float() / temperature, dim=-1)
+                        _kl = kl_loss_fn(_p, _t).sum(dim=-1)          # (B, chunk_len)
+                        l_kd = l_kd + (_kl * tok_mask[:, _s:_e]).sum() / valid
+                        del _t, _p, _kl
+                    l_kd = l_kd * (temperature ** 2)
+                    # t_logits_detached is only used in the KD loop above (detached,
+                    # not part of any grad graph); free it now (~312 MB float32).
                     del t_logits_detached
 
                     # Backward pass (recomputes proxy graph using MATH)

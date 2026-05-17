@@ -27,6 +27,7 @@ export GRAD_ACC=8
 # otherwise the LinearSVD layer structure (which layers get replaced + their ranks)
 # diverges between training and scoring → garbage gradients during scoring.
 export IPROX_SPARSITY=0.1
+export IPROX_N_TRAIN_P=300   # must match --n_train_p in train_iprox_proxy.sh
 
 # Projection dimensions
 export GT_PROJ_DIM=65536
