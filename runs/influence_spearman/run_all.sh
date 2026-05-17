@@ -42,13 +42,13 @@ show_results() {
 bash runs/influence_spearman/compute_ground_truth.sh "$CFG"           || echo "Ground Truth failed, skipping"
 
 # ── Methods (each prints a running table immediately on completion) ────────────
-bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"          && show_results || echo "IProX failed, skipping"
+#bash runs/influence_spearman/compute_iprox_scores.sh "$CFG"          && show_results || echo "IProX failed, skipping"
 
 bash runs/influence_spearman/compute_less_scores.sh "$CFG"           && show_results || echo "LESS failed, skipping"
 #bash runs/influence_spearman/compute_less_small_scores.sh "$CFG"    && show_results || echo "LESS-small failed, skipping"
 bash runs/influence_spearman/compute_embedding_scores.sh "$CFG"      && show_results || echo "Embedding failed, skipping"
-bash runs/influence_spearman/compute_random_scores.sh "$CFG"        && show_results || echo "Random failed, skipping"
-bash runs/influence_spearman/compute_logra_scores.sh "$CFG"         && show_results || echo "LoGRA failed, skipping"
+#bash runs/influence_spearman/compute_random_scores.sh "$CFG"        && show_results || echo "Random failed, skipping"
+#bash runs/influence_spearman/compute_logra_scores.sh "$CFG"         && show_results || echo "LoGRA failed, skipping"
 #bash runs/influence_spearman/compute_logra_small_scores.sh "$CFG"   && show_results || echo "LoGRA-small failed, skipping"
 #bash runs/influence_spearman/compute_less_proxy_scores.sh "$CFG"     && show_results || echo "LESS-proxy failed, skipping"
 #bash runs/influence_spearman/compute_logra_proxy_scores.sh "$CFG"   && show_results || echo "LoGRA-proxy failed, skipping"
