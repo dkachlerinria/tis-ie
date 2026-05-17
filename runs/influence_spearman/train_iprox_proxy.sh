@@ -20,7 +20,7 @@ rm -rf "${IPROX_PROXY_DIR}/model"
 python iprox/train_iprox.py \
     --target_model                 "${INFLUENCE_MODEL}" \
     --train_dataset                "${TRAIN_DATASET}" \
-    --n_train_p                    150 \
+    --n_train_p                    300 \
     --pool_start_index             "${END_INDEX}" \
     --init_method                  IPSVD \
     --sparsity                     "${IPROX_SPARSITY}" \
