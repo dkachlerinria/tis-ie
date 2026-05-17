@@ -113,23 +113,24 @@ def compute_iprox_scores(
         for i in tqdm(range(len(anchor_ds)), desc="Anchor Gradients"):
             batch = {k: anchor_ds[i][k].unsqueeze(0) for k in ["input_ids", "attention_mask", "labels"]}
             g = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+            torch.cuda.empty_cache()  # free activations from backward immediately
             if g is not None:
                 if grad_dim is None:
                     grad_dim = int(g.shape[0])
-                dev_grads.append(safe_normalize(g))
+                # Store as float16 to halve CPU RAM usage for the dev_matrix
+                dev_grads.append(safe_normalize(g).half())
             else:
-                dev_grads.append(torch.zeros(1))
+                dev_grads.append(torch.zeros(1, dtype=torch.float16))
 
-        dev_matrix = torch.stack(dev_grads)  # [n_anchors, grad_dim]
+        # [n_anchors, grad_dim] in float16 — dot products cast back to float32
+        dev_matrix = torch.stack(dev_grads)
 
         for j in tqdm(range(len(train_ds)), desc="Train Similarity"):
             batch = {k: train_ds[j][k].unsqueeze(0) for k in ["input_ids", "attention_mask", "labels"]}
             g_t = compute_proxy_gradient(proxy_model, batch, device, target_modules)
+            torch.cuda.empty_cache()
             if g_t is not None:
-                scores[:, j] = dev_matrix @ safe_normalize(g_t)
-
-            if j % 1000 == 0:
-                torch.cuda.empty_cache()
+                scores[:, j] = (dev_matrix @ safe_normalize(g_t).half()).float()
 
     inference_time_s = time.perf_counter() - t0
     measured_flops = int(counter.get_total_flops())

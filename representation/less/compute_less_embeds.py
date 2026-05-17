@@ -61,11 +61,8 @@ def prepare_batch(batch, device=torch.device("cuda:0")):
         batch[key] = batch[key].to(device)
 
 
-def get_trak_projector(device: torch.device, force_basic=False):
+def get_trak_projector(device: torch.device):
     """Get trak projectors (see https://github.com/MadryLab/trak for details)"""
-    if force_basic:
-        print("DEBUG: Forcing BasicProjector to prevent fast_jl OOMs on massive dimensions")
-        return BasicProjector
 
     try:
         num_sms = torch.cuda.get_device_properties(device.index).multi_processor_count
@@ -177,9 +174,7 @@ def collect_grads(
         # first and second moment estimates
         m, v = prepare_optimizer_state(model, adam_optimizer_state, device)
 
-    # Use basic projector to prevent fast_jl PTX kernel OOMs on massive dimensions
-    force_basic = proj_dim > 8192
-    projector = get_trak_projector(device, force_basic=force_basic)
+    projector = get_trak_projector(device)
     number_of_params = get_number_of_trainable_params(model)
     print(f"DEBUG: Projecting {number_of_params} parameters per sample")
 
