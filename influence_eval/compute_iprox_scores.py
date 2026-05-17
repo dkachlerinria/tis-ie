@@ -65,9 +65,16 @@ def compute_iprox_scores(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    logger.info("🤖 Loading base model: %s", target_model)
+    # Load base model from the SAVED PROXY DIRECTORY (not the hub model).
+    # proxy_path/pytorch_model.bin contains only SVD factor keys (no standard
+    # model keys), so from_pretrained default-inits the non-SVD layers.
+    # This matches the state the model was in when gradient alignment was trained
+    # (non-SVD layers at default init), keeping A,B in the correct gradient space.
+    # Loading pretrained weights instead causes the large baseline loss to dominate
+    # and destroy the alignment signal.
+    logger.info("🤖 Loading base model from proxy dir: %s", proxy_path)
     base_model = AutoModelForCausalLM.from_pretrained(
-        target_model,
+        proxy_path,
         torch_dtype=torch.bfloat16,
         device_map="auto",
         attn_implementation="eager",  # required: FlopCounterMode's SDPA handler crashes on GQA models
