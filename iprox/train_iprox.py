@@ -33,7 +33,6 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
     Returns (scores, inference_time_s, measured_flops, grad_dim).
     """
     import time
-    from influence_eval.flops_measure import flop_counter
 
     proxy_model.eval()
     for p in proxy_model.parameters():
@@ -59,26 +58,28 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
         g = torch.cat(grads)
         return g / g.norm().clamp_min(1e-8)
 
+    # FlopCounterMode's SDPA handler asserts equal Q/K/V heads and crashes on
+    # GQA models (e.g. Gemma3). Skip measurement; flops_for_method("iprox", ...)
+    # uses the analytic formula when measured_flops is None.
     grad_dim = None
     t0 = time.perf_counter()
-    with flop_counter() as counter:
-        anchor_grads = []
-        for i in tqdm(range(len(anchor_ds)), desc="[inline] anchor grads"):
-            g = _grad(anchor_ds[i])
-            if g is not None:
-                if grad_dim is None:
-                    grad_dim = int(g.shape[0])
-                anchor_grads.append(g)
-        anchor_matrix = torch.stack(anchor_grads)
+    anchor_grads = []
+    for i in tqdm(range(len(anchor_ds)), desc="[inline] anchor grads"):
+        g = _grad(anchor_ds[i])
+        if g is not None:
+            if grad_dim is None:
+                grad_dim = int(g.shape[0])
+            anchor_grads.append(g)
+    anchor_matrix = torch.stack(anchor_grads)
 
-        scores = torch.zeros(len(anchor_grads), len(train_ds))
-        for j in tqdm(range(len(train_ds)), desc="[inline] train grads"):
-            g = _grad(train_ds[j])
-            if g is not None:
-                scores[:, j] = anchor_matrix @ g
+    scores = torch.zeros(len(anchor_grads), len(train_ds))
+    for j in tqdm(range(len(train_ds)), desc="[inline] train grads"):
+        g = _grad(train_ds[j])
+        if g is not None:
+            scores[:, j] = anchor_matrix @ g
 
     inference_time_s = time.perf_counter() - t0
-    measured_flops = int(counter.get_total_flops())
+    measured_flops = None  # analytic formula used by flops_for_method
 
     torch.save(scores, out_path)
     logger.info("[inline scoring] saved %s  shape=%s", out_path, tuple(scores.shape))
