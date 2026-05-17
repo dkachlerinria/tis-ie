@@ -131,6 +131,16 @@ def compute_scores(
     logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
     logger.info("Computing %d anchor gradients (proj_dim=%d)", len(anchor_ds), proj_dim)
 
+    # Save tokenized datasets so downstream methods (IProX, proxy variants) can
+    # load the EXACT same input_ids/attention_mask/labels the GT used, eliminating
+    # any tokenization format discrepancy.
+    anchor_save = os.path.join(save_dir, "tokenized_anchor_ds")
+    train_save = os.path.join(save_dir, "tokenized_train_ds")
+    anchor_ds.save_to_disk(anchor_save)
+    train_ds.save_to_disk(train_save)
+    logger.info("Saved tokenized anchor_ds → %s", anchor_save)
+    logger.info("Saved tokenized train_ds  → %s", train_save)
+
     import time
     t0 = time.perf_counter()
     with flop_counter() as counter:

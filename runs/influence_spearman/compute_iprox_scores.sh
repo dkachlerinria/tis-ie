@@ -16,12 +16,10 @@ fi
 echo "🧮 Computing IProX similarity matrix for Spearman evaluation..."
 
 python3 -m influence_eval.compute_iprox_scores \
-    --proxy_path         "$IPROX_PROXY_DIR" \
-    --target_model       "${INFLUENCE_MODEL}" \
-    --train_dataset_name "${TRAIN_DATASET}" \
-    --dev_dataset_name   "${BENCHMARK}" \
-    --save_dir           "${INFLUENCE_OUT}" \
-    --end_index          "${END_INDEX}" \
-    --num_anchors        "${NUM_ANCHORS}" \
-    --sparsity           "${IPROX_SPARSITY}" \
-    --out_name           "iprox"
+    --proxy_path             "$IPROX_PROXY_DIR" \
+    --target_model           "${INFLUENCE_MODEL}" \
+    --save_dir               "${INFLUENCE_OUT}" \
+    --tokenized_anchor_path  "${INFLUENCE_OUT}/tokenized_anchor_ds" \
+    --tokenized_train_path   "${INFLUENCE_OUT}/tokenized_train_ds" \
+    --sparsity               "${IPROX_SPARSITY}" \
+    --out_name               "iprox"
