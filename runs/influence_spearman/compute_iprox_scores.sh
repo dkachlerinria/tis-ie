@@ -16,7 +16,6 @@ fi
 echo "🧮 Computing IProX similarity matrix for Spearman evaluation..."
 
 python3 -m influence_eval.compute_iprox_scores \
-    --target_model          "${INFLUENCE_MODEL}" \
     --proxy_path            "$IPROX_PROXY_DIR" \
     --save_dir              "${INFLUENCE_OUT}" \
     --tokenized_train_path  "${INFLUENCE_OUT}/tokenized_train_ds" \

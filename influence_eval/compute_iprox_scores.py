@@ -53,7 +53,6 @@ def _iter_tokenized_disk(path: str, device: str):
 
 
 def compute_iprox_scores(
-    target_model_name: str,
     proxy_path: str,
     save_dir: str,
     tokenized_train_path: str,
@@ -73,13 +72,16 @@ def compute_iprox_scores(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # The original IProX design: save_proxy_model stores ONLY the SVD A/B factors.
-    # from_pretrained(proxy_path) would find keys like "q_proj.linear_A" which don't
-    # match any standard Linear key → all weights are randomly initialized → garbage.
-    # Load the base pretrained weights from the original model name instead.
-    logger.info("🤖 Loading base model from %s", target_model_name)
+    # save_proxy_model stores ONLY the SVD A/B factors, so from_pretrained(proxy_path)
+    # would leave all standard weights randomly initialized.  Instead, read the original
+    # model name from the config.json that train_iprox.py already saves via
+    # target_model.config.save_pretrained(model_dir) — it includes "_name_or_path".
+    config_path = os.path.join(proxy_path, "config.json")
+    with open(config_path) as f:
+        base_model_name = json.load(f)["_name_or_path"]
+    logger.info("🤖 Loading base model from config._name_or_path: %s", base_model_name)
     base_model = AutoModelForCausalLM.from_pretrained(
-        target_model_name,
+        base_model_name,
         torch_dtype=torch.bfloat16,
         device_map="auto",
     )
@@ -155,10 +157,8 @@ def compute_iprox_scores(
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     p = argparse.ArgumentParser()
-    p.add_argument("--target_model", required=True,
-                   help="Original pretrained model name/path used for proxy training (e.g. jhu-clsp/ettin-decoder-68m).")
     p.add_argument("--proxy_path", required=True,
-                   help="Directory containing the trained SVD factors (pytorch_model.bin) and tokenizer.")
+                   help="Directory containing pytorch_model.bin, config.json, and tokenizer (output of train_iprox.py).")
     p.add_argument("--save_dir", required=True)
     p.add_argument("--tokenized_train_path", required=True,
                    help="Path to HF dataset saved by compute_gradient_scores (tokenized_train_ds).")
@@ -169,7 +169,6 @@ def main():
     args = p.parse_args()
 
     compute_iprox_scores(
-        target_model_name=args.target_model,
         proxy_path=args.proxy_path,
         save_dir=args.save_dir,
         tokenized_train_path=args.tokenized_train_path,
