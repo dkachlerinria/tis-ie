@@ -39,6 +39,7 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
         p.requires_grad_(True)
 
     def _grad(sample):
+        """Returns normalized gradient vector on GPU (float32)."""
         proxy_model.zero_grad(set_to_none=True)
         inp = {
             "input_ids":      torch.tensor(sample["input_ids"]).unsqueeze(0).to(device),
@@ -51,11 +52,11 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
             if any(name.endswith(tm) for tm in target_modules):
                 if hasattr(module, "linear_A") and hasattr(module, "linear_B"):
                     if module.linear_A.grad is not None and module.linear_B.grad is not None:
-                        grads.append(module.linear_A.grad.detach().cpu().float().flatten())
-                        grads.append(module.linear_B.grad.detach().cpu().float().flatten())
+                        grads.append(module.linear_A.grad.detach().float().flatten())
+                        grads.append(module.linear_B.grad.detach().float().flatten())
         if not grads:
             return None
-        g = torch.cat(grads)
+        g = torch.cat(grads)  # stays on GPU
         return g / g.norm().clamp_min(1e-8)
 
     # FlopCounterMode's SDPA handler asserts equal Q/K/V heads and crashes on
@@ -69,14 +70,14 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
         if g is not None:
             if grad_dim is None:
                 grad_dim = int(g.shape[0])
-            anchor_grads.append(g)
-    anchor_matrix = torch.stack(anchor_grads)
+            anchor_grads.append(g.cpu())  # move to CPU only for storage
+    anchor_matrix = torch.stack(anchor_grads).to(device)  # [n_anchors, D] on GPU
 
     scores = torch.zeros(len(anchor_grads), len(train_ds))
     for j in tqdm(range(len(train_ds)), desc="[inline] train grads"):
-        g = _grad(train_ds[j])
+        g = _grad(train_ds[j])  # GPU
         if g is not None:
-            scores[:, j] = anchor_matrix @ g
+            scores[:, j] = (anchor_matrix @ g).cpu()  # GPU matmul → small [n_anchors] result
 
     inference_time_s = time.perf_counter() - t0
     measured_flops = None  # analytic formula used by flops_for_method
