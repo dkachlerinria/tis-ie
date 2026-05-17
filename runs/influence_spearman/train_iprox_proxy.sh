@@ -25,7 +25,7 @@ python iprox/train_iprox.py \
     --init_method                  IPSVD \
     --sparsity                     "${IPROX_SPARSITY}" \
     --batch_size                   2 \
-    --gradient_accumulation_steps  2 \
+    --gradient_accumulation_steps  1 \
     --lambda_anchor                0.0 \
     --epochs                       5 \
     --max_seq_length               2048 \
