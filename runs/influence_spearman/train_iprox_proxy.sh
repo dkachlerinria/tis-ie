@@ -24,7 +24,7 @@ python iprox/train_iprox.py \
     --pool_start_index             "${END_INDEX}" \
     --init_method                  IPSVD \
     --sparsity                     "${IPROX_SPARSITY}" \
-    --batch_size                   2 \
+    --batch_size                   4 \
     --gradient_accumulation_steps  1 \
     --lambda_anchor                0.1 \
     --epochs                       5 \
