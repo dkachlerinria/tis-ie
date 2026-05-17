@@ -42,16 +42,23 @@ def load_train_dataset(
     end_index: int,
     max_seq_length: int = 2048,
     eval_on_train: int = 0,
+    local_train_dataset: str = None,
 ) -> torch.utils.data.Dataset:
-    ds = load_dataset("Harvard-DCML/tulu-v2-197K-processed", split="train")
-    ds = ds.shuffle(seed=42)
-    if eval_on_train > 0:
-        start_idx = end_index
-        end_idx = min(start_idx + eval_on_train, len(ds))
-        ds = ds.select(range(start_idx, end_idx))
+    if local_train_dataset:
+        # Local file (e.g. dolly): load the first end_index rows in file order, no shuffle.
+        ds = load_dataset("json", data_files=[local_train_dataset])["train"]
+        n = min(end_index, len(ds))
+        ds = ds.select(range(n))
     else:
-        end_index = min(end_index, len(ds))
-        ds = ds.select(range(0, end_index))
+        ds = load_dataset("Harvard-DCML/tulu-v2-197K-processed", split="train")
+        ds = ds.shuffle(seed=42)
+        if eval_on_train > 0:
+            start_idx = end_index
+            end_idx = min(start_idx + eval_on_train, len(ds))
+            ds = ds.select(range(start_idx, end_idx))
+        else:
+            end_index = min(end_index, len(ds))
+            ds = ds.select(range(0, end_index))
 
     ds = ds.map(
         lambda x: encode_with_messages_format(
@@ -124,17 +131,22 @@ def compute_scores(
     save_grads: bool,
     tulu_as_anchors: bool = False,
     eval_on_train: int = 0,
+    local_train_dataset: str = None,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
 
     # Load datasets outside FlopCounterMode (data loading is not GPU work).
-    train_ds = load_train_dataset(tokenizer, end_index, eval_on_train=eval_on_train)
+    train_ds = load_train_dataset(
+        tokenizer, end_index,
+        eval_on_train=eval_on_train,
+        local_train_dataset=local_train_dataset,
+    )
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
 
-    if tulu_as_anchors:
-        # Diagnostic: use first num_anchors Tulu samples as anchors — same domain
-        # and format (encode_with_messages_format) as the train pool.
-        logger.info("🔄 DIAGNOSTIC: using first %d Tulu samples as anchors", num_anchors)
+    if tulu_as_anchors or local_train_dataset:
+        # When using a local dataset, the pool IS the anchors (first num_anchors rows).
+        label = "local dataset" if local_train_dataset else "Tulu"
+        logger.info("🔄 DIAGNOSTIC: using first %d %s samples as anchors", num_anchors, label)
         anchor_ds = train_ds.select(range(min(num_anchors, len(train_ds))))
     else:
         anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
@@ -215,6 +227,8 @@ def parse_args():
                    help="Diagnostic: use first --num_anchors Tulu samples as anchors instead of BBH.")
     p.add_argument("--eval_on_train", type=int, default=0,
                    help="Cheat diagnostic: load [end_index : end_index + eval_on_train] instead of [0 : end_index] to match proxy training pool.")
+    p.add_argument("--local_train_dataset", type=str, default=None,
+                   help="Path to local JSONL file (e.g. dolly/dolly_data.jsonl). Uses first --end_index rows in file order instead of tulu.")
     return p.parse_args()
 
 
@@ -252,6 +266,7 @@ def main():
         save_grads=args.save_grads,
         tulu_as_anchors=args.tulu_as_anchors,
         eval_on_train=args.eval_on_train,
+        local_train_dataset=args.local_train_dataset,
     )
 
     # Save param counts alongside scores so FLOPS can read them later
