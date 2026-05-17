@@ -27,7 +27,7 @@ python iprox/train_iprox.py \
     --batch_size                   4 \
     --gradient_accumulation_steps  1 \
     --lambda_anchor                0.1 \
-    --epochs                       5 \
+    --epochs                       1 \
     --max_seq_length               2048 \
     --lr                           1e-4 \
     --weight_decay                 0.01 \
