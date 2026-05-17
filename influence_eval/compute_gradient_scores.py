@@ -41,15 +41,18 @@ def load_train_dataset(
     tokenizer: AutoTokenizer,
     end_index: int,
     max_seq_length: int = 2048,
+    eval_on_train: int = 0,
 ) -> torch.utils.data.Dataset:
     ds = load_dataset("Harvard-DCML/tulu-v2-197K-processed", split="train")
-    end_index = min(end_index, len(ds))
-    # Shuffle the FULL dataset before slicing so [0:end_index] is a uniform
-    # random sample across all source groups (FLAN, ShareGPT, GPT4-Alpaca, ...).
-    # seed=42 is shared with bbh_data.load_bbh_samples and the other Tulu loaders
-    # so every method in this pipeline sees the same sample at index i.
     ds = ds.shuffle(seed=42)
-    ds = ds.select(range(0, end_index))
+    if eval_on_train > 0:
+        start_idx = end_index
+        end_idx = min(start_idx + eval_on_train, len(ds))
+        ds = ds.select(range(start_idx, end_idx))
+    else:
+        end_index = min(end_index, len(ds))
+        ds = ds.select(range(0, end_index))
+
     ds = ds.map(
         lambda x: encode_with_messages_format(
             example=x,
@@ -120,11 +123,12 @@ def compute_scores(
     project_interval: int,
     save_grads: bool,
     tulu_as_anchors: bool = False,
+    eval_on_train: int = 0,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
 
     # Load datasets outside FlopCounterMode (data loading is not GPU work).
-    train_ds = load_train_dataset(tokenizer, end_index)
+    train_ds = load_train_dataset(tokenizer, end_index, eval_on_train=eval_on_train)
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
 
     if tulu_as_anchors:
@@ -209,6 +213,8 @@ def parse_args():
     p.add_argument("--save_grads", action="store_true")
     p.add_argument("--tulu_as_anchors", action="store_true",
                    help="Diagnostic: use first --num_anchors Tulu samples as anchors instead of BBH.")
+    p.add_argument("--eval_on_train", type=int, default=0,
+                   help="Cheat diagnostic: load [end_index : end_index + eval_on_train] instead of [0 : end_index] to match proxy training pool.")
     return p.parse_args()
 
 
@@ -245,6 +251,7 @@ def main():
         project_interval=args.project_interval,
         save_grads=args.save_grads,
         tulu_as_anchors=args.tulu_as_anchors,
+        eval_on_train=args.eval_on_train,
     )
 
     # Save param counts alongside scores so FLOPS can read them later
