@@ -10,7 +10,7 @@ import argparse
 import random
 import logging
 from tqdm import tqdm
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset, load_from_disk, concatenate_datasets
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForSeq2Seq
 from torch.utils.data import DataLoader, random_split
 from torch.optim import AdamW
@@ -235,10 +235,18 @@ def main():
     )
 
     # 2. Load Datasets
-    # BBH anchors: local files with full CoT prefix, construct_test_sample format.
-    # This is the same path/format used by load_anchor_dataset in compute_gradient_scores.py
-    # so the proxy trains on the exact token distribution it will be evaluated on.
-    train_anchors = load_bbh_for_training(tokenizer, n_samples=args.n_train_a)
+    # BBH anchors: load directly from tokenized_anchor_ds saved by compute_ground_truth.sh.
+    # This is byte-identical to what the inline scoring evaluates against — guaranteed alignment.
+    score_dir = os.path.dirname(os.path.normpath(args.output_dir))
+    tokenized_anchor_path = os.path.join(score_dir, "tokenized_anchor_ds")
+    if os.path.exists(tokenized_anchor_path):
+        train_anchors = load_from_disk(tokenized_anchor_path)
+        train_anchors = train_anchors.select(range(min(args.n_train_a, len(train_anchors))))
+        logger.info("📂 Loaded %d BBH training samples from tokenized_anchor_ds", len(train_anchors))
+    else:
+        logger.warning("tokenized_anchor_ds not found at %s — falling back to local BBH files. "
+                       "Run compute_ground_truth.sh first for exact alignment.", tokenized_anchor_path)
+        train_anchors = load_bbh_for_training(tokenizer, n_samples=args.n_train_a)
     train_pool = load_data_split(args.train_dataset, tokenizer, n_samples=args.n_train_p, start_index=args.pool_start_index, end_index=args.end_index, is_dev=False)
     
     # We add an indicator to the items to differentiate pool vs anchor if the aligner needs it.
@@ -385,7 +393,6 @@ def main():
             )
         else:
             logger.info("🔬 Running inline scoring from GT tokenized datasets...")
-            from datasets import load_from_disk
             train_pool_ds = load_from_disk(tokenized_train_path)
             train_pool_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
             anchor_ds = load_from_disk(tokenized_anchor_path)
