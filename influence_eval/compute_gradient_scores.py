@@ -143,18 +143,29 @@ def compute_scores(
     save_grads: bool,
     local_train_dataset: str = None,
     local_anchor_offset: bool = False,
+    tokenized_train_path: str = None,
+    tokenized_anchor_path: str = None,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
 
-    # Load datasets outside FlopCounterMode (data loading is not GPU work).
-    train_ds = load_train_dataset(
-        tokenizer, end_index,
-        local_train_dataset=local_train_dataset,
-    )
+    # When pre-tokenized paths are provided, load those directly so every method
+    # operates on byte-identical input_ids/labels — no re-tokenization divergence.
+    if tokenized_train_path and os.path.exists(tokenized_train_path):
+        from datasets import load_from_disk
+        train_ds = load_from_disk(tokenized_train_path)
+        train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+        logger.info("Loaded train_ds from disk: %d samples ← %s", len(train_ds), tokenized_train_path)
+    else:
+        train_ds = load_train_dataset(tokenizer, end_index, local_train_dataset=local_train_dataset)
+
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
 
-    if local_anchor_offset and local_train_dataset:
-        # Anchors = next slice of the local file after the train pool: [end_index : end_index+num_anchors].
+    if tokenized_anchor_path and os.path.exists(tokenized_anchor_path):
+        from datasets import load_from_disk
+        anchor_ds = load_from_disk(tokenized_anchor_path)
+        anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+        logger.info("Loaded anchor_ds from disk: %d samples ← %s", len(anchor_ds), tokenized_anchor_path)
+    elif local_anchor_offset and local_train_dataset:
         logger.info("Loading anchors from %s [%d:%d]", local_train_dataset, end_index, end_index + num_anchors)
         raw = load_dataset("json", data_files=[local_train_dataset])["train"]
         raw = raw.select(range(end_index, min(end_index + num_anchors, len(raw))))
@@ -244,6 +255,10 @@ def parse_args():
                    help="Path to local JSONL file (e.g. dolly/dolly_data.jsonl). Uses first --end_index rows in file order instead of tulu.")
     p.add_argument("--local_anchor_offset", action="store_true",
                    help="When set (with --local_train_dataset), use rows [end_index:end_index+num_anchors] of the local file as anchors instead of BBH.")
+    p.add_argument("--tokenized_train_path", type=str, default=None,
+                   help="Path to HF dataset saved by a GT run (tokenized_train_ds). Bypasses re-tokenization.")
+    p.add_argument("--tokenized_anchor_path", type=str, default=None,
+                   help="Path to HF dataset saved by a GT run (tokenized_anchor_ds). Bypasses re-tokenization.")
     return p.parse_args()
 
 
@@ -281,6 +296,8 @@ def main():
         save_grads=args.save_grads,
         local_train_dataset=args.local_train_dataset,
         local_anchor_offset=args.local_anchor_offset,
+        tokenized_train_path=args.tokenized_train_path,
+        tokenized_anchor_path=args.tokenized_anchor_path,
     )
 
     # Save param counts alongside scores so FLOPS can read them later
