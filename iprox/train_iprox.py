@@ -391,6 +391,20 @@ def main():
             anchor_ds = load_from_disk(tokenized_anchor_path)
             anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
+            # Verify train_anchors (BBH used during proxy training) exactly matches
+            # tokenized_anchor_ds (BBH used during scoring).  Any mismatch means the
+            # proxy trained on different tokens than it is evaluated on.
+            _ta = train_anchors[0]["input_ids"]
+            _sa = anchor_ds[0]["input_ids"]
+            _ta_list = _ta.tolist() if hasattr(_ta, "tolist") else list(_ta)
+            _sa_list = _sa.tolist() if hasattr(_sa, "tolist") else list(_sa)
+            if _ta_list == _sa_list:
+                logger.info("✅ BBH alignment check: train_anchors[0] == anchor_ds[0] (%d tokens)", len(_ta_list))
+            else:
+                logger.warning("❌ BBH MISMATCH: train len=%d anchor len=%d", len(_ta_list), len(_sa_list))
+                logger.warning("   train  first 10 tokens: %s", _ta_list[:10])
+                logger.warning("   anchor first 10 tokens: %s", _sa_list[:10])
+
             # scores_path goes to INFLUENCE_OUT so run_experiment.py picks it up.
             scores_path = os.path.join(score_dir, "iprox_scores.pt")
             scores, inf_time_s, measured_flops, grad_dim = score_proxy_inline(
