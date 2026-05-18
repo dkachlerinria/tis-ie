@@ -97,17 +97,38 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed_all(seed)
     setseed(seed)
 
+def load_bbh_for_training(tokenizer, n_samples, start_index=0):
+    """Load BBH from local files using the same path as load_anchor_dataset.
+
+    Uses construct_test_sample so the token format exactly matches what
+    the anchor evaluation will use — the proxy trains on the same distribution
+    it will be scored against.
+    """
+    from datasets import Dataset as HFDataset
+    from influence_eval.bbh_data import load_bbh_samples
+    samples = load_bbh_samples(n_samples=n_samples, start_index=start_index)
+    renamed = [{"prompts": s["prompt"], "labels": s["response"]} for s in samples]
+    ds = HFDataset.from_list(renamed)
+    ds = ds.map(
+        lambda x: construct_test_sample(tokenizer=tokenizer, sample=x, max_length=2048),
+        num_proc=1,
+        load_from_cache_file=False,
+    )
+    logger.info("📂 Loaded %d BBH training samples from local files", len(ds))
+    return ds
+
+
 def load_data_split(dataset_name, tokenizer, n_samples=None, start_index=0, end_index=None, is_dev=False):
     """Load data using HF datasets following the TIS pattern"""
     logger.info(f"📂 Loading {'dev' if is_dev else 'train'} dataset: {dataset_name}")
-    
+
     if is_dev:
         try:
             ds = load_dataset("Harvard-DCML/targeted-query-set-processed", dataset_name, split="dev")
         except:
             try: ds = load_dataset(dataset_name, split="test")
             except: ds = load_dataset(dataset_name, split="validation")
-        
+
         if end_index:
             ds = ds.select(range(min(end_index, len(ds))))
         elif n_samples:
@@ -195,8 +216,11 @@ def main():
         device_map="auto",
     )
 
-    # 2. Load Datasets via HF
-    train_anchors = load_data_split(args.benchmark, tokenizer, n_samples=args.n_train_a, is_dev=True)
+    # 2. Load Datasets
+    # BBH anchors: local files with full CoT prefix, construct_test_sample format.
+    # This is the same path/format used by load_anchor_dataset in compute_gradient_scores.py
+    # so the proxy trains on the exact token distribution it will be evaluated on.
+    train_anchors = load_bbh_for_training(tokenizer, n_samples=args.n_train_a)
     train_pool = load_data_split(args.train_dataset, tokenizer, n_samples=args.n_train_p, start_index=args.pool_start_index, end_index=args.end_index, is_dev=False)
     
     # We add an indicator to the items to differentiate pool vs anchor if the aligner needs it.

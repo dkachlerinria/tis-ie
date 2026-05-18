@@ -21,6 +21,7 @@ python iprox/train_iprox.py \
     --target_model                 "${INFLUENCE_MODEL}" \
     --train_dataset                "dolly/dolly_data.jsonl" \
     --n_train_p                    100 \
+    --n_train_a                    "${NUM_ANCHORS}" \
     --pool_start_index             0 \
     --init_method                  IPSVD \
     --sparsity                     "${IPROX_SPARSITY}" \
