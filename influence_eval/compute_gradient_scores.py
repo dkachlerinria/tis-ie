@@ -78,12 +78,21 @@ def load_anchor_dataset(
     # Load from local BBH files (same seed=42 shuffle as gradient_stocking.py)
     # Spearman eval anchors are always [0:num_anchors]
     samples = load_bbh_samples(n_samples=num_anchors, start_index=0)
-    # construct_test_sample expects "prompts"/"labels" keys
-    renamed = [{"prompts": s["prompt"], "labels": s["response"]} for s in samples]
-    ds = HFDataset.from_list(renamed)
+    # Wrap in messages format (same as dolly training data) so all gradient-based
+    # methods — including IProX proxy — see the same chat-format token distribution
+    # they were calibrated on.  construct_test_sample produces raw-concat tokens
+    # with no <|user|>/<|assistant|> markers, which causes a distribution shift for
+    # any proxy trained on encode_with_messages_format data.
+    ds = HFDataset.from_list([
+        {"messages": [
+            {"role": "user",      "content": s["prompt"]},
+            {"role": "assistant", "content": s["response"]},
+        ]}
+        for s in samples
+    ])
     ds = ds.map(
-        lambda x: construct_test_sample(
-            tokenizer=tokenizer, sample=x, max_length=max_length
+        lambda x: encode_with_messages_format(
+            example=x, tokenizer=tokenizer, max_seq_length=max_length, include_response=True,
         ),
         num_proc=1,
         load_from_cache_file=False,
