@@ -118,7 +118,7 @@ def load_bbh_for_training(tokenizer, n_samples, start_index=0):
     # Diagnostic: count samples where the response will be truncated away.
     # construct_test_sample appends response AFTER prompt, so if len(prompt) >= max_seq_length
     # the collator's truncation (right-side) cuts off the response → all labels = -100 → zero gradient.
-    max_seq = 2048
+    max_seq = 4096
     n_over = 0
     n_dead  = 0
     for i in range(len(ds)):
