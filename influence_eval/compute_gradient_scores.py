@@ -142,6 +142,7 @@ def compute_scores(
     project_interval: int,
     save_grads: bool,
     local_train_dataset: str = None,
+    local_anchor_offset: bool = False,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
 
@@ -152,8 +153,20 @@ def compute_scores(
     )
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
 
-    # Anchors always come from BBH (dev_dataset_name).
-    anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
+    if local_anchor_offset and local_train_dataset:
+        # Anchors = next slice of the local file after the train pool: [end_index : end_index+num_anchors].
+        logger.info("Loading anchors from %s [%d:%d]", local_train_dataset, end_index, end_index + num_anchors)
+        raw = load_dataset("json", data_files=[local_train_dataset])["train"]
+        raw = raw.select(range(end_index, min(end_index + num_anchors, len(raw))))
+        anchor_ds = raw.map(
+            lambda x: encode_with_messages_format(
+                example=x, tokenizer=tokenizer, max_seq_length=2048, include_response=True,
+            ),
+            num_proc=1, load_from_cache_file=False,
+        )
+        anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    else:
+        anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
     anchor_dl = torch.utils.data.DataLoader(anchor_ds, batch_size=1, shuffle=False)
 
     logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
@@ -229,6 +242,8 @@ def parse_args():
     p.add_argument("--save_grads", action="store_true")
     p.add_argument("--local_train_dataset", type=str, default=None,
                    help="Path to local JSONL file (e.g. dolly/dolly_data.jsonl). Uses first --end_index rows in file order instead of tulu.")
+    p.add_argument("--local_anchor_offset", action="store_true",
+                   help="When set (with --local_train_dataset), use rows [end_index:end_index+num_anchors] of the local file as anchors instead of BBH.")
     return p.parse_args()
 
 
@@ -265,6 +280,7 @@ def main():
         project_interval=args.project_interval,
         save_grads=args.save_grads,
         local_train_dataset=args.local_train_dataset,
+        local_anchor_offset=args.local_anchor_offset,
     )
 
     # Save param counts alongside scores so FLOPS can read them later
