@@ -114,7 +114,25 @@ def load_bbh_for_training(tokenizer, n_samples, start_index=0):
         num_proc=1,
         load_from_cache_file=False,
     )
-    logger.info("📂 Loaded %d BBH training samples from local files", len(ds))
+
+    # Diagnostic: count samples where the response will be truncated away.
+    # construct_test_sample appends response AFTER prompt, so if len(prompt) >= max_seq_length
+    # the collator's truncation (right-side) cuts off the response → all labels = -100 → zero gradient.
+    max_seq = 2048
+    n_over = 0
+    n_dead  = 0
+    for i in range(len(ds)):
+        ids   = ds[i]["input_ids"]
+        labs  = ds[i]["labels"]
+        seq_len = len(ids) if hasattr(ids, "__len__") else ids.shape[0]
+        if seq_len > max_seq:
+            n_over += 1
+        # Check whether any non-(-100) label survives within first max_seq positions
+        survived = [l for l in (labs[:max_seq].tolist() if hasattr(labs, "tolist") else list(labs)[:max_seq]) if l != -100]
+        if not survived:
+            n_dead += 1
+    logger.info("BBH train data: %d/%d exceed %d tokens; %d/%d have ALL labels masked after truncation (zero gradient)",
+                n_over, len(ds), max_seq, n_dead, len(ds))
     return ds
 
 

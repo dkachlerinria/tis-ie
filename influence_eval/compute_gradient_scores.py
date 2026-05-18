@@ -92,7 +92,22 @@ def load_anchor_dataset(
         load_from_cache_file=False,
     )
     ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
-    logger.info("Loaded %d anchor samples from local BBH [0:%d]", len(ds), num_anchors)
+
+    # Diagnostic: detect samples whose response will be invisible to the model.
+    n_dead = 0
+    for i in range(len(ds)):
+        labs = ds[i]["labels"]
+        survived = (labs != -100).sum().item()
+        if survived == 0:
+            n_dead += 1
+    if n_dead:
+        logger.warning(
+            "BBH anchors: %d/%d samples have ALL labels=-100 (response truncated or missing). "
+            "These contribute zero gradient — increase max_length or shorten prompts.",
+            n_dead, num_anchors,
+        )
+    else:
+        logger.info("BBH anchors: all %d samples have at least one non-masked label token.", num_anchors)
     return ds
 
 
