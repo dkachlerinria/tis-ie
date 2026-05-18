@@ -67,11 +67,8 @@ def main():
     tokenizer = model.tokenizer
 
     # Load anchor texts outside FlopCounterMode (no GPU work).
-    if args.local_train_dataset:
-        # Anchors are disjoint from train pool: rows [end_index : end_index + num_anchors].
-        anchor_texts = _local_texts(args.local_train_dataset, args.num_anchors, start=args.end_index)
-    else:
-        anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
+    # Anchors are always BBH; local_train_dataset only affects the train pool.
+    anchor_texts = bbh_texts_for_encoder(n_samples=args.num_anchors, start_index=0)
 
     t0 = time.perf_counter()
     with flop_counter() as counter:

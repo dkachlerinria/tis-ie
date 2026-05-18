@@ -9,8 +9,8 @@ python3 -m influence_eval.compute_gradient_scores \
     --model_name          "${INFLUENCE_MODEL}" \
     --save_dir            "${INFLUENCE_OUT}" \
     --out_name            "less_small" \
-    --end_index           100 \
-    --num_anchors         100 \
+    --end_index           "${END_INDEX}" \
+    --num_anchors         "${NUM_ANCHORS}" \
     --proj_dim            "${LESS_PROJ_DIM}" \
     --dev_dataset_name    "${BENCHMARK}" \
     --lora_target_modules "${LORA_TARGET_MODULES}" \
@@ -19,4 +19,4 @@ python3 -m influence_eval.compute_gradient_scores \
     --lora_dropout        "${LORA_DROPOUT}" \
     --lora_seed           "${LORA_SEED}" \
     --project_interval    "${PROJECT_INTERVAL}" \
-    --local_train_dataset "dolly/dolly_data.jsonl"
+    --local_train_dataset "dolly/dolly_data.jsonl" \

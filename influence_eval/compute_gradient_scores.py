@@ -41,7 +41,6 @@ def load_train_dataset(
     tokenizer: AutoTokenizer,
     end_index: int,
     max_seq_length: int = 2048,
-    eval_on_train: int = 0,
     local_train_dataset: str = None,
 ) -> torch.utils.data.Dataset:
     if local_train_dataset:
@@ -52,13 +51,8 @@ def load_train_dataset(
     else:
         ds = load_dataset("Harvard-DCML/tulu-v2-197K-processed", split="train")
         ds = ds.shuffle(seed=42)
-        if eval_on_train > 0:
-            start_idx = end_index
-            end_idx = min(start_idx + eval_on_train, len(ds))
-            ds = ds.select(range(start_idx, end_idx))
-        else:
-            end_index = min(end_index, len(ds))
-            ds = ds.select(range(0, end_index))
+        end_index = min(end_index, len(ds))
+        ds = ds.select(range(0, end_index))
 
     ds = ds.map(
         lambda x: encode_with_messages_format(
@@ -129,8 +123,6 @@ def compute_scores(
     dev_dataset_name: str,
     project_interval: int,
     save_grads: bool,
-    tulu_as_anchors: bool = False,
-    eval_on_train: int = 0,
     local_train_dataset: str = None,
 ) -> Tuple[str, dict]:
     os.makedirs(save_dir, exist_ok=True)
@@ -138,30 +130,12 @@ def compute_scores(
     # Load datasets outside FlopCounterMode (data loading is not GPU work).
     train_ds = load_train_dataset(
         tokenizer, end_index,
-        eval_on_train=eval_on_train,
         local_train_dataset=local_train_dataset,
     )
     train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=False)
 
-    if local_train_dataset:
-        # Anchors are a disjoint slice: rows [end_index : end_index + num_anchors].
-        logger.info("🔄 DIAGNOSTIC: loading anchor slice [%d:%d] from %s",
-                    end_index, end_index + num_anchors, local_train_dataset)
-        raw_anchor = load_dataset("json", data_files=[local_train_dataset])["train"]
-        raw_anchor = raw_anchor.select(range(end_index, min(end_index + num_anchors, len(raw_anchor))))
-        anchor_ds = raw_anchor.map(
-            lambda x: encode_with_messages_format(
-                example=x, tokenizer=tokenizer, max_seq_length=2048, include_response=True,
-            ),
-            num_proc=1,
-            load_from_cache_file=False,
-        )
-        anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
-    elif tulu_as_anchors:
-        logger.info("🔄 DIAGNOSTIC: using first %d Tulu samples as anchors", num_anchors)
-        anchor_ds = train_ds.select(range(min(num_anchors, len(train_ds))))
-    else:
-        anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
+    # Anchors always come from BBH (dev_dataset_name).
+    anchor_ds = load_anchor_dataset(tokenizer, dev_dataset_name, num_anchors)
     anchor_dl = torch.utils.data.DataLoader(anchor_ds, batch_size=1, shuffle=False)
 
     logger.info("Computing %d train gradients (proj_dim=%d)", len(train_ds), proj_dim)
@@ -235,10 +209,6 @@ def parse_args():
     p.add_argument("--lora_seed", type=int, default=0)
     p.add_argument("--project_interval", type=int, default=8)
     p.add_argument("--save_grads", action="store_true")
-    p.add_argument("--tulu_as_anchors", action="store_true",
-                   help="Diagnostic: use first --num_anchors Tulu samples as anchors instead of BBH.")
-    p.add_argument("--eval_on_train", type=int, default=0,
-                   help="Cheat diagnostic: load [end_index : end_index + eval_on_train] instead of [0 : end_index] to match proxy training pool.")
     p.add_argument("--local_train_dataset", type=str, default=None,
                    help="Path to local JSONL file (e.g. dolly/dolly_data.jsonl). Uses first --end_index rows in file order instead of tulu.")
     return p.parse_args()
@@ -276,8 +246,6 @@ def main():
         dev_dataset_name=args.dev_dataset_name,
         project_interval=args.project_interval,
         save_grads=args.save_grads,
-        tulu_as_anchors=args.tulu_as_anchors,
-        eval_on_train=args.eval_on_train,
         local_train_dataset=args.local_train_dataset,
     )
 

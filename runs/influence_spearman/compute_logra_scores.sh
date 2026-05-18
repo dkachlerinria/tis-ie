@@ -8,8 +8,8 @@ mkdir -p "$INFLUENCE_OUT"
 python3 -m influence_eval.compute_logra_scores \
     --model_name            "${INFLUENCE_MODEL}" \
     --save_dir              "${INFLUENCE_OUT}" \
-    --end_index             100 \
-    --num_anchors           100 \
+    --end_index             "${END_INDEX}" \
+    --num_anchors           "${NUM_ANCHORS}" \
     --dev_dataset_name      "${BENCHMARK}" \
     --tokenized_train_path  "${INFLUENCE_OUT}/tokenized_train_ds" \
     --tokenized_anchor_path "${INFLUENCE_OUT}/tokenized_anchor_ds" \

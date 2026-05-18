@@ -330,74 +330,76 @@ def main():
     logger.info(f"✅ IProX Proxy Model saved to {model_dir}")
 
     # 7. Optional inline scoring — uses the in-memory proxy so loading bugs can't hide.
-    if args.score_inline and os.path.exists(args.train_dataset):
-        logger.info("🔬 Running inline scoring (no save/load)...")
-        anchor_start = args.pool_start_index + args.n_train_p
-        anchor_ds = load_data_split(
-            args.train_dataset, tokenizer,
-            n_samples=args.n_train_p,
-            start_index=anchor_start,
-            is_dev=False,
-        )
-        anchor_ds = anchor_ds.remove_columns(
-            [c for c in anchor_ds.column_names if c not in ['input_ids', 'attention_mask', 'labels']]
-        )
-        train_pool_ds = train_pool.remove_columns(
-            [c for c in train_pool.column_names if c not in ['input_ids', 'attention_mask', 'labels']]
-        )
-
-        # Save to INFLUENCE_OUT (parent of iprox_proxy/) so run_experiment.py finds it.
+    # Loads anchor/train data from the tokenized datasets saved by compute_ground_truth.sh
+    # so the inputs are byte-for-byte identical to what every other method sees.
+    if args.score_inline:
         score_dir = os.path.dirname(os.path.normpath(args.output_dir))
-        scores_path = os.path.join(score_dir, "iprox_scores.pt")
-        scores, inf_time_s, measured_flops, grad_dim = score_proxy_inline(
-            proxy_model, train_pool_ds, anchor_ds,
-            device, args.target_modules, scores_path,
-        )
-
-        n_samples = len(anchor_ds) + len(train_pool_ds)
-        from influence_eval.model_utils import count_params
-        proxy_params = count_params(proxy_model)
-        meta = {
-            **proxy_params,
-            "num_anchors":       int(scores.shape[0]),
-            "num_train":         int(scores.shape[1]),
-            "grad_dim":          int(grad_dim),
-            "model_name":        args.target_model,
-            "sparsity":          args.sparsity,
-            "method":            "iprox",
-            "measured_flops":    measured_flops,
-            "inference_time_s":  float(inf_time_s),
-            "time_per_sample_s": float(inf_time_s / max(n_samples, 1)),
-        }
-        torch.save(meta, os.path.join(score_dir, "iprox_params.pt"))
-
-        # Compute Spearman vs GT and print the full table row.
-        gt_path = os.path.join(score_dir, "ground_truth_scores.pt")
-        if os.path.exists(gt_path):
-            try:
-                from influence_eval.spearman import all_metrics
-                from influence_eval.flops import flops_for_method
-                gt_scores = torch.load(gt_path, map_location="cpu")
-                m = all_metrics(scores, gt_scores)
-                pa = m["per_anchor"]
-                flops_d = flops_for_method("iprox", meta, seq_len=args.max_seq_length)
-                tps_ms = meta["time_per_sample_s"] * 1000
-                header = (
-                    "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) "
-                    "| Total FLOPS | Inf. FLOPS | Inf. Time (s) | Time/Sample (ms) |"
-                )
-                sep = "|---|---|---|---|---|---|---|---|---|"
-                row = (
-                    f"| iprox | {pa['mean']:.4f} | {pa['std']:.4f} | "
-                    f"{m['aggregated_mean']:.4f} | {m['aggregated_max']:.4f} | "
-                    f"{flops_d['total']:.3e} | {flops_d['inference']:.3e} | "
-                    f"{inf_time_s:.2f} | {tps_ms:.2f} |"
-                )
-                logger.info("\n%s\n%s\n%s", header, sep, row)
-            except Exception as e:
-                logger.warning("[inline vs GT] Could not compute Spearman: %s", e)
+        tokenized_train_path   = os.path.join(score_dir, "tokenized_train_ds")
+        tokenized_anchor_path  = os.path.join(score_dir, "tokenized_anchor_ds")
+        if not (os.path.exists(tokenized_train_path) and os.path.exists(tokenized_anchor_path)):
+            logger.warning(
+                "🔬 Inline scoring skipped: tokenized datasets not found at %s. "
+                "Run compute_ground_truth.sh first.", score_dir,
+            )
         else:
-            logger.info("[inline vs GT] No GT scores found at %s — skipping Spearman.", gt_path)
+            logger.info("🔬 Running inline scoring from GT tokenized datasets...")
+            from datasets import load_from_disk
+            train_pool_ds = load_from_disk(tokenized_train_path)
+            train_pool_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+            anchor_ds = load_from_disk(tokenized_anchor_path)
+            anchor_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+
+            # scores_path goes to INFLUENCE_OUT so run_experiment.py picks it up.
+            scores_path = os.path.join(score_dir, "iprox_scores.pt")
+            scores, inf_time_s, measured_flops, grad_dim = score_proxy_inline(
+                proxy_model, train_pool_ds, anchor_ds,
+                device, args.target_modules, scores_path,
+            )
+
+            n_samples = len(anchor_ds) + len(train_pool_ds)
+            from influence_eval.model_utils import count_params
+            proxy_params = count_params(proxy_model)
+            meta = {
+                **proxy_params,
+                "num_anchors":       int(scores.shape[0]),
+                "num_train":         int(scores.shape[1]),
+                "grad_dim":          int(grad_dim),
+                "model_name":        args.target_model,
+                "sparsity":          args.sparsity,
+                "method":            "iprox",
+                "measured_flops":    measured_flops,
+                "inference_time_s":  float(inf_time_s),
+                "time_per_sample_s": float(inf_time_s / max(n_samples, 1)),
+            }
+            torch.save(meta, os.path.join(score_dir, "iprox_params.pt"))
+
+            # Compare against GT and print the markdown table row.
+            gt_path = os.path.join(score_dir, "ground_truth_scores.pt")
+            if os.path.exists(gt_path):
+                try:
+                    from influence_eval.spearman import all_metrics
+                    from influence_eval.flops import flops_for_method
+                    gt_scores = torch.load(gt_path, map_location="cpu")
+                    m = all_metrics(scores, gt_scores)
+                    pa = m["per_anchor"]
+                    flops_d = flops_for_method("iprox", meta, seq_len=args.max_seq_length)
+                    tps_ms = meta["time_per_sample_s"] * 1000
+                    header = (
+                        "| method | per-anchor mean | per-anchor std | agg(mean) | agg(max) "
+                        "| Total FLOPS | Inf. FLOPS | Inf. Time (s) | Time/Sample (ms) |"
+                    )
+                    sep = "|---|---|---|---|---|---|---|---|---|"
+                    row = (
+                        f"| iprox | {pa['mean']:.4f} | {pa['std']:.4f} | "
+                        f"{m['aggregated_mean']:.4f} | {m['aggregated_max']:.4f} | "
+                        f"{flops_d['total']:.3e} | {flops_d['inference']:.3e} | "
+                        f"{inf_time_s:.2f} | {tps_ms:.2f} |"
+                    )
+                    logger.info("\n%s\n%s\n%s", header, sep, row)
+                except Exception as e:
+                    logger.warning("[inline vs GT] Could not compute Spearman: %s", e)
+            else:
+                logger.info("[inline vs GT] No GT scores at %s — skipping Spearman.", gt_path)
 
 if __name__ == "__main__":
     main()

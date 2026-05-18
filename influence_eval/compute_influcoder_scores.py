@@ -17,19 +17,6 @@ from transformers import AutoModelForCausalLM
 from influence_eval.bbh_data import bbh_texts_for_encoder
 
 
-def _local_texts(path: str, n: int, start: int = 0) -> list:
-    import json
-    texts = []
-    with open(path) as f:
-        for i, line in enumerate(f):
-            if i < start:
-                continue
-            if len(texts) >= n:
-                break
-            item = json.loads(line)
-            text = " ".join(m["content"] for m in item.get("messages", []))
-            texts.append(text)
-    return texts
 from influence_eval.flops_measure import flop_counter, load_phase_flops, load_phase_timing
 from influence_eval.model_utils import count_params
 from representation.embed.compute_sentence_embeds import compute_train_embeddings
@@ -80,11 +67,8 @@ def compute_influcoder_scores(
         model.to("cuda")
     tokenizer = model.tokenizer
 
-    if local_train_dataset:
-        # Anchors are disjoint from train pool: rows [end_index : end_index + num_anchors].
-        anchor_texts = _local_texts(local_train_dataset, num_anchors, start=end_index)
-    else:
-        anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
+    # Anchors are always BBH; local_train_dataset only affects the train pool.
+    anchor_texts = bbh_texts_for_encoder(n_samples=num_anchors, start_index=0)
 
     t0 = time.perf_counter()
     with flop_counter() as counter:

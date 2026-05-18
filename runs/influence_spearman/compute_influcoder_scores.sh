@@ -9,8 +9,8 @@ python3 -m influence_eval.compute_influcoder_scores \
     --encoder_dir        "${INFLUCODER_ENCODER_DIR}/model" \
     --gradient_model     "${INFLUENCE_MODEL}" \
     --save_dir           "${INFLUENCE_OUT}" \
-    --end_index          100 \
-    --num_anchors        100 \
+    --end_index          "${END_INDEX}" \
+    --num_anchors        "${NUM_ANCHORS}" \
     --dev_dataset_name   "${BENCHMARK}" \
     --local_train_dataset "dolly/dolly_data.jsonl" \
     --n_stock_anchors    "$((INFLUCODER_N_TRAIN_A + INFLUCODER_N_EVAL_A))" \
