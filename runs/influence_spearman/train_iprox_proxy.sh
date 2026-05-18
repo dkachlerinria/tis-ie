@@ -29,7 +29,7 @@ python iprox/train_iprox.py \
     --gradient_accumulation_steps  1 \
     --lambda_anchor                0.01 \
     --epochs                       2 \
-    --max_seq_length               2048 \
+    --max_seq_length               4096 \
     --lr                           1e-4 \
     --seed                         42 \
     --output_dir                   "${IPROX_PROXY_DIR}" \
