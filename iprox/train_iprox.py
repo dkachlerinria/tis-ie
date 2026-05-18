@@ -82,6 +82,27 @@ def score_proxy_inline(proxy_model, train_ds, anchor_ds, device, target_modules,
     inference_time_s = time.perf_counter() - t0
     measured_flops = None  # analytic formula used by flops_for_method
 
+    # Diagnose constant rows (anchor produces same score for every train sample).
+    n_constant = 0
+    for i in range(scores.shape[0]):
+        if float(scores[i].std()) < 1e-6:
+            n_constant += 1
+            logger.warning("[inline] anchor %d: CONSTANT row (std=%.2e, mean=%.4f) — zero or collapsed gradient",
+                           i, float(scores[i].std()), float(scores[i].mean()))
+    if n_constant == 0:
+        logger.info("[inline] score matrix looks healthy — no constant rows")
+    else:
+        logger.warning("[inline] %d/%d anchor rows are constant", n_constant, scores.shape[0])
+
+    # Also report anchor gradient norms before normalization.
+    raw_norms = []
+    for i in range(len(anchor_grads)):
+        raw_norms.append(float(anchor_grads[i].norm()))
+    zero_norms = sum(1 for n in raw_norms if n < 1e-4)
+    logger.info("[inline] anchor grad norms — min=%.4f max=%.4f mean=%.4f  zero(<1e-4): %d/%d",
+                min(raw_norms), max(raw_norms), sum(raw_norms)/len(raw_norms),
+                zero_norms, len(raw_norms))
+
     torch.save(scores, out_path)
     logger.info("[inline scoring] saved %s  shape=%s", out_path, tuple(scores.shape))
     return scores, inference_time_s, measured_flops, grad_dim or 0
