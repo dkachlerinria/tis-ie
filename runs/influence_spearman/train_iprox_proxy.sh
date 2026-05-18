@@ -24,10 +24,10 @@ python iprox/train_iprox.py \
     --pool_start_index             0 \
     --init_method                  IPSVD \
     --sparsity                     "${IPROX_SPARSITY}" \
-    --batch_size                   4 \
+    --batch_size                   2 \
     --gradient_accumulation_steps  1 \
     --lambda_anchor                0.01 \
-    --epochs                       1 \
+    --epochs                       2 \
     --max_seq_length               2048 \
     --lr                           1e-4 \
     --seed                         42 \
